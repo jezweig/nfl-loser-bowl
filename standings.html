@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Standings — NFL Loser Bowl 2026</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <div class="brand">
+        <span class="ball">🏈</span>
+        <span>
+          NFL Loser Bowl
+          <small>2026 Season</small>
+        </span>
+      </div>
+      <nav class="site-nav">
+        <a href="index.html">Home</a>
+        <a href="pick.html">Make Pick</a>
+        <a href="history.html">My History</a>
+        <a href="standings.html" class="active">Standings</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <section class="hero" style="padding-top: 10px;">
+        <h1 style="font-size: 2.2rem;">Standings</h1>
+        <p class="subtitle">Weekly picks, strikes, and who's still alive.</p>
+      </section>
+
+      <section class="card">
+        <div class="legend">
+          <span><span class="dot safe"></span>Survived (team lost)</span>
+          <span><span class="dot strike"></span>Strike (team won)</span>
+          <span><span class="dot pending"></span>🔒 Not yet revealed / no pick</span>
+        </div>
+        <p style="color: var(--text-dim); font-size: 0.88rem; margin: 4px 0 18px;">
+          2 strikes = eliminated. Eliminated players may buy back in once,
+          through Week 8, for $20. A player's current-week pick stays
+          hidden from everyone else here until its deadline passes — check
+          <a href="history.html">My History</a> to confirm your own pick
+          went through.
+        </p>
+        <div class="table-scroll">
+          <div id="standings-table-container">
+            <div class="empty-state">Loading standings…</div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">NFL Loser Bowl &mdash; 2026 Season</div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <script>
+    async function render() {
+      const container = document.getElementById("standings-table-container");
+      try {
+        const [players, teams, picks, results, games] = await Promise.all([
+          loadPlayers(),
+          loadTeams(),
+          loadVisiblePicks(),
+          loadResults(),
+          loadGames(),
+        ]);
+
+        if (players.length === 0) {
+          container.innerHTML = `<div class="empty-state">No players yet — be the first to <a href="pick.html">make a pick</a>.</div>`;
+          return;
+        }
+
+        const now = new Date();
+        const maxWeek = isSeasonComplete(now, games) ? 18 : computeCurrentWeek(now, games);
+
+        const picksByPlayer = {};
+        picks.forEach((p) => {
+          (picksByPlayer[p.player_id] = picksByPlayer[p.player_id] || {})[p.week] = p;
+        });
+
+        const weekHeaders = Array.from({ length: maxWeek }, (_, i) => `<th>Wk ${i + 1}</th>`).join("");
+
+        const rows = players
+          .map((player) => {
+            const myPicks = Object.values(picksByPlayer[player.id] || {});
+            const strikes = computeStrikes(myPicks, results, player.rebought, player.rebuy_week);
+            const eliminated = strikes >= 2;
+            const status = eliminated ? "eliminated" : player.rebought ? "rebought" : "active";
+            const statusLabel = eliminated ? "Eliminated" : player.rebought ? "Re-entered" : "Active";
+
+            let cells = "";
+            for (let w = 1; w <= maxWeek; w++) {
+              const pick = (picksByPlayer[player.id] || {})[w];
+              if (!pick) {
+                cells += `<td>&mdash;</td>`;
+                continue;
+              }
+              const result = resultForPick(pick, results);
+              const resultLabel = result === "safe" ? "Survived" : result === "strike" ? "Strike" : "Pending";
+              cells += `<td><span class="cell-pick"><span class="team">${escapeHtml(teams[pick.team] || pick.team)}</span><span class="result ${result}">${resultLabel}</span></span></td>`;
+            }
+
+            const strikeIcon = strikes > 0 ? `<span class="strike-icon">${"✗".repeat(strikes)}</span>` : "&mdash;";
+
+            return `<tr class="${eliminated ? "eliminated" : ""}">
+              <td class="name-cell">${escapeHtml(player.name)}</td>
+              ${cells}
+              <td class="strikes-cell">${strikeIcon}</td>
+              <td><span class="status-badge ${status}">${statusLabel}</span></td>
+            </tr>`;
+          })
+          .join("");
+
+        container.innerHTML = `
+          <table class="standings">
+            <thead>
+              <tr>
+                <th style="text-align:left;">Player</th>
+                ${weekHeaders}
+                <th>Strikes</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        `;
+      } catch (err) {
+        container.innerHTML = `<div class="form-error">${escapeHtml(friendlyError(err))}</div>`;
+      }
+    }
+
+    render();
+  </script>
+</body>
+</html>

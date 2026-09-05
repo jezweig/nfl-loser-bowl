@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Make Your Pick — NFL Loser Bowl 2026</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <div class="brand">
+        <span class="ball">🏈</span>
+        <span>
+          NFL Loser Bowl
+          <small>2026 Season</small>
+        </span>
+      </div>
+      <nav class="site-nav">
+        <a href="index.html">Home</a>
+        <a href="pick.html" class="active">Make Pick</a>
+        <a href="history.html">My History</a>
+        <a href="standings.html">Standings</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <section class="hero" style="padding-top: 10px;">
+        <h1 style="font-size: 2.2rem;">Make Your Pick</h1>
+        <p class="subtitle">Pick the team you expect to LOSE this week.</p>
+      </section>
+
+      <div id="login-section"></div>
+      <div id="pick-section" hidden></div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">NFL Loser Bowl &mdash; 2026 Season</div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <script>
+    const loginSection = document.getElementById("login-section");
+    const pickSection = document.getElementById("pick-section");
+
+    let state = {
+      games: [],
+      teams: {},
+      currentWeek: null,
+      myPicks: [],
+      session: null,
+      selectedTeam: null,
+    };
+
+    function renderLogin(errorMsg) {
+      pickSection.hidden = true;
+      loginSection.hidden = false;
+      loginSection.innerHTML = `
+        <section class="card login-card">
+          <h2>Who's picking?</h2>
+          ${errorMsg ? `<div class="form-error">${escapeHtml(errorMsg)}</div>` : ""}
+          <div class="field">
+            <label for="name-input">Your name</label>
+            <input id="name-input" type="text" autocomplete="name" placeholder="e.g. Josh Zweig" />
+          </div>
+          <div class="field">
+            <label for="pin-input">Your PIN (4-8 digits)</label>
+            <input id="pin-input" type="password" inputmode="numeric" autocomplete="off" placeholder="First time? Make one up." />
+            <div class="field-hint">
+              First time entering your name: this PIN is created for you —
+              remember it, you'll need it to change your pick or view your
+              history from another device. Returning: enter the same PIN
+              you used before.
+            </div>
+          </div>
+          <button class="btn" id="login-btn" style="width:100%;">Continue →</button>
+        </section>
+      `;
+      document.getElementById("login-btn").addEventListener("click", handleLogin);
+      document.getElementById("pin-input").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") handleLogin();
+      });
+    }
+
+    async function handleLogin() {
+      const name = document.getElementById("name-input").value.trim();
+      const pin = document.getElementById("pin-input").value.trim();
+      const btn = document.getElementById("login-btn");
+      if (!name) return renderLogin("Please enter your name.");
+      if (!/^\d{4,8}$/.test(pin)) return renderLogin("PIN must be 4-8 digits.");
+
+      btn.disabled = true;
+      btn.textContent = "Checking…";
+      try {
+        const result = await registerOrLogin(name, pin);
+        saveSession(result.player_id, result.out_name, pin);
+        state.session = { player_id: result.player_id, name: result.out_name, pin };
+        await loadPickScreen();
+      } catch (err) {
+        renderLogin(friendlyError(err));
+      }
+    }
+
+    function switchPlayer() {
+      clearSession();
+      state.session = null;
+      renderLogin();
+    }
+
+    async function loadPickScreen() {
+      loginSection.hidden = true;
+      pickSection.hidden = false;
+      pickSection.innerHTML = `<div class="empty-state">Loading this week's games…</div>`;
+
+      try {
+        const [games, teams, myPicks] = await Promise.all([
+          loadGames(),
+          loadTeams(),
+          getMyPicksRpc(state.session.player_id, state.session.pin),
+        ]);
+        state.games = games;
+        state.teams = teams;
+        state.myPicks = myPicks;
+
+        const now = new Date();
+        if (isSeasonComplete(now, games)) {
+          pickSection.innerHTML = `<div class="card empty-state">The season is complete — thanks for playing! Check the <a href="standings.html">standings</a> for final results.</div>`;
+          return;
+        }
+        state.currentWeek = computeCurrentWeek(now, games);
+        renderPickForm();
+      } catch (err) {
+        if (String(err.message || "").includes("wrong_pin")) {
+          clearSession();
+          renderLogin("Incorrect PIN for that name. Please try again.");
+          return;
+        }
+        pickSection.innerHTML = `<div class="card form-error">${escapeHtml(friendlyError(err))}</div>`;
+      }
+    }
+
+    function renderPickForm() {
+      const week = state.currentWeek;
+      const byWeek = groupByWeek(state.games);
+      const weekGames = (byWeek[week] || []).slice().sort(
+        (a, b) => new Date(a.kickoff) - new Date(b.kickoff)
+      );
+      const now = new Date();
+
+      const usedTeams = new Set(
+        state.myPicks.filter((p) => p.week !== week).map((p) => p.team)
+      );
+      const existingPick = state.myPicks.find((p) => p.week === week);
+      state.selectedTeam = existingPick ? existingPick.team : null;
+
+      const rows = weekGames
+        .map((g) => {
+          const homeLock = pickLockTime(weekGames, g.home);
+          const awayLock = pickLockTime(weekGames, g.away);
+          const kickoffLabel = formatEt(new Date(g.kickoff));
+
+          function teamButton(code, teamLock) {
+            const name = state.teams[code] || code;
+            const used = usedTeams.has(code);
+            const past = teamLock <= now;
+            const disabled = used || past;
+            const selected = state.selectedTeam === code;
+            const title = used
+              ? "Already picked in an earlier week"
+              : past
+              ? "Deadline passed"
+              : "";
+            return `<button type="button" class="team-btn ${selected ? "selected" : ""}"
+              data-team="${code}" ${disabled ? "disabled" : ""} title="${title}">${escapeHtml(name)}</button>`;
+          }
+
+          return `<div class="game-row">
+            <div class="matchup">${escapeHtml(state.teams[g.away] || g.away)} @ ${escapeHtml(state.teams[g.home] || g.home)}</div>
+            <div class="kickoff">${kickoffLabel}</div>
+            <div class="team-choice">
+              ${teamButton(g.away, awayLock)}
+              ${teamButton(g.home, homeLock)}
+            </div>
+          </div>`;
+        })
+        .join("");
+
+      const lockedIn = existingPick && new Date(existingPick.locked_at) <= now;
+
+      pickSection.innerHTML = `
+        <div class="whoami-bar">
+          <span>Picking as <span class="who">${escapeHtml(state.session.name)}</span></span>
+          <a href="#" id="switch-link">Not you? Switch player</a>
+        </div>
+
+        <div class="week-banner">
+          <div class="week-title">Week ${week}</div>
+        </div>
+
+        ${
+          existingPick
+            ? `<div class="current-pick-banner">
+                Your current pick: <span class="team-name">${escapeHtml(state.teams[existingPick.team] || existingPick.team)}</span> to lose.
+                ${lockedIn ? " This pick is locked in and can no longer be changed." : " You can change it below until its deadline."}
+              </div>`
+            : `<div class="countdown-note" style="display:block;">You haven't picked for Week ${week} yet — choose a team to LOSE below.</div>`
+        }
+
+        <div id="submit-error"></div>
+
+        <div class="card">
+          <p style="color: var(--text-dim); font-size: 0.88rem; margin-top:0;">
+            Click the team you expect to <strong>LOSE</strong>. Grayed-out
+            teams are either already used in a previous week, or their
+            deadline has passed.
+          </p>
+          <div class="game-list">${rows}</div>
+          <div class="cta-row" style="margin-top: 20px;">
+            <button class="btn" id="submit-pick-btn" ${lockedIn ? "disabled" : ""}>
+              ${existingPick ? "Update Pick" : "Submit Pick"}
+            </button>
+          </div>
+        </div>
+      `;
+
+      document.getElementById("switch-link").addEventListener("click", (e) => {
+        e.preventDefault();
+        switchPlayer();
+      });
+
+      pickSection.querySelectorAll(".team-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (btn.disabled) return;
+          state.selectedTeam = btn.dataset.team;
+          pickSection.querySelectorAll(".team-btn").forEach((b) => b.classList.remove("selected"));
+          btn.classList.add("selected");
+        });
+      });
+
+      document.getElementById("submit-pick-btn").addEventListener("click", async () => {
+        const errBox = document.getElementById("submit-error");
+        errBox.innerHTML = "";
+        if (!state.selectedTeam) {
+          errBox.innerHTML = `<div class="form-error">Pick a team first.</div>`;
+          return;
+        }
+        const btn = document.getElementById("submit-pick-btn");
+        btn.disabled = true;
+        btn.textContent = "Submitting…";
+        try {
+          await submitPickRpc(
+            state.session.player_id,
+            state.session.pin,
+            week,
+            state.selectedTeam
+          );
+          const myPicks = await getMyPicksRpc(state.session.player_id, state.session.pin);
+          state.myPicks = myPicks;
+          renderPickForm();
+          const successNote = document.createElement("div");
+          successNote.className = "form-success";
+          successNote.textContent = "Pick saved!";
+          pickSection.insertBefore(successNote, pickSection.firstChild);
+        } catch (err) {
+          errBox.innerHTML = `<div class="form-error">${escapeHtml(friendlyError(err))}</div>`;
+          btn.disabled = false;
+          btn.textContent = existingPick ? "Update Pick" : "Submit Pick";
+        }
+      });
+    }
+
+    (function init() {
+      const session = loadSession();
+      if (session) {
+        state.session = session;
+        loadPickScreen();
+      } else {
+        renderLogin();
+      }
+    })();
+  </script>
+</body>
+</html>

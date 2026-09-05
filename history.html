@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My History — NFL Loser Bowl 2026</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <div class="brand">
+        <span class="ball">🏈</span>
+        <span>
+          NFL Loser Bowl
+          <small>2026 Season</small>
+        </span>
+      </div>
+      <nav class="site-nav">
+        <a href="index.html">Home</a>
+        <a href="pick.html">Make Pick</a>
+        <a href="history.html" class="active">My History</a>
+        <a href="standings.html">Standings</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <section class="hero" style="padding-top: 10px;">
+        <h1 style="font-size: 2.2rem;">My History</h1>
+        <p class="subtitle">Only you can see this — your picks, results, and strikes.</p>
+      </section>
+
+      <div id="login-section"></div>
+      <div id="history-section" hidden></div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">NFL Loser Bowl &mdash; 2026 Season</div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <script>
+    const loginSection = document.getElementById("login-section");
+    const historySection = document.getElementById("history-section");
+    let session = null;
+
+    function renderLogin(errorMsg) {
+      historySection.hidden = true;
+      loginSection.hidden = false;
+      loginSection.innerHTML = `
+        <section class="card login-card">
+          <h2>Whose history?</h2>
+          ${errorMsg ? `<div class="form-error">${escapeHtml(errorMsg)}</div>` : ""}
+          <div class="field">
+            <label for="name-input">Your name</label>
+            <input id="name-input" type="text" autocomplete="name" />
+          </div>
+          <div class="field">
+            <label for="pin-input">Your PIN</label>
+            <input id="pin-input" type="password" inputmode="numeric" autocomplete="off" />
+          </div>
+          <button class="btn" id="login-btn" style="width:100%;">View My History →</button>
+        </section>
+      `;
+      document.getElementById("login-btn").addEventListener("click", handleLogin);
+      document.getElementById("pin-input").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") handleLogin();
+      });
+    }
+
+    async function handleLogin() {
+      const name = document.getElementById("name-input").value.trim();
+      const pin = document.getElementById("pin-input").value.trim();
+      if (!name) return renderLogin("Please enter your name.");
+      if (!/^\d{4,8}$/.test(pin)) return renderLogin("PIN must be 4-8 digits.");
+      const btn = document.getElementById("login-btn");
+      btn.disabled = true;
+      btn.textContent = "Checking…";
+      try {
+        const result = await registerOrLogin(name, pin);
+        saveSession(result.player_id, result.out_name, pin);
+        session = { player_id: result.player_id, name: result.out_name, pin };
+        await renderHistory();
+      } catch (err) {
+        renderLogin(friendlyError(err));
+      }
+    }
+
+    function switchPlayer() {
+      clearSession();
+      session = null;
+      renderLogin();
+    }
+
+    async function renderHistory() {
+      loginSection.hidden = true;
+      historySection.hidden = false;
+      historySection.innerHTML = `<div class="empty-state">Loading your history…</div>`;
+
+      try {
+        const [games, teams, myPicks, results] = await Promise.all([
+          loadGames(),
+          loadTeams(),
+          getMyPicksRpc(session.player_id, session.pin),
+          loadResults(),
+        ]);
+
+        const players = await loadPlayers();
+        const me = players.find((p) => p.id === session.player_id) || {};
+
+        const strikes = computeStrikes(myPicks, results, me.rebought, me.rebuy_week);
+        const eliminated = strikes >= 2;
+        const status = eliminated ? "Eliminated" : me.rebought ? "Re-entered" : "Active";
+        const statusClass = eliminated ? "eliminated" : me.rebought ? "rebought" : "active";
+
+        const now = new Date();
+        const currentWeek = isSeasonComplete(now, games) ? null : computeCurrentWeek(now, games);
+
+        const rowsByWeek = {};
+        myPicks.forEach((p) => (rowsByWeek[p.week] = p));
+
+        const maxWeek = currentWeek || 18;
+        let rows = "";
+        for (let w = 1; w <= maxWeek; w++) {
+          const p = rowsByWeek[w];
+          if (!p) {
+            rows += `<tr><td>Week ${w}</td><td colspan="2" style="color:var(--text-dim);">No pick</td></tr>`;
+            continue;
+          }
+          const locked = new Date(p.locked_at) <= now;
+          const result = locked ? resultForPick(p, results) : "pending";
+          const resultLabel = !locked
+            ? "Locked in — waiting on kickoff"
+            : result === "safe"
+            ? "Survived"
+            : result === "strike"
+            ? "Strike"
+            : "Pending result";
+          rows += `<tr>
+            <td>Week ${w}</td>
+            <td>${escapeHtml(teams[p.team] || p.team)}</td>
+            <td class="result ${locked ? result : "pending"}">${resultLabel}</td>
+          </tr>`;
+        }
+
+        historySection.innerHTML = `
+          <div class="whoami-bar">
+            <span>Viewing <span class="who">${escapeHtml(session.name)}</span></span>
+            <a href="#" id="switch-link">Not you? Switch player</a>
+          </div>
+
+          <div class="card" style="display:flex; gap:24px; flex-wrap:wrap; align-items:center;">
+            <div>
+              <div style="font-size:0.78rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.06em;">Strikes</div>
+              <div style="font-size:1.8rem; font-weight:800; color:${strikes > 0 ? "var(--danger)" : "var(--text)"};">${strikes} / 2</div>
+            </div>
+            <div>
+              <div style="font-size:0.78rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.06em;">Status</div>
+              <span class="status-badge ${statusClass}" style="font-size:0.95rem;">${status}</span>
+            </div>
+            ${
+              eliminated && !me.rebought
+                ? `<div style="color:var(--gold); font-size:0.88rem;">You can buy back in through Week 8 for $20 via Venmo — reach out to the commissioner.</div>`
+                : ""
+            }
+          </div>
+
+          <div class="card">
+            <div class="table-scroll">
+              <table class="admin-table">
+                <thead><tr><th>Week</th><th>Pick (to lose)</th><th>Result</th></tr></thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </div>
+          </div>
+        `;
+
+        document.getElementById("switch-link").addEventListener("click", (e) => {
+          e.preventDefault();
+          switchPlayer();
+        });
+      } catch (err) {
+        if (String(err.message || "").includes("wrong_pin")) {
+          clearSession();
+          renderLogin("Incorrect PIN for that name. Please try again.");
+          return;
+        }
+        historySection.innerHTML = `<div class="card form-error">${escapeHtml(friendlyError(err))}</div>`;
+      }
+    }
+
+    (function init() {
+      const saved = loadSession();
+      if (saved) {
+        session = saved;
+        renderHistory();
+      } else {
+        renderLogin();
+      }
+    })();
+  </script>
+</body>
+</html>

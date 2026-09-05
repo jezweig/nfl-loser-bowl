@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NFL Loser Bowl 2026</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <div class="brand">
+        <span class="ball">🏈</span>
+        <span>
+          NFL Loser Bowl
+          <small>2026 Season</small>
+        </span>
+      </div>
+      <nav class="site-nav">
+        <a href="index.html" class="active">Home</a>
+        <a href="pick.html">Make Pick</a>
+        <a href="history.html">My History</a>
+        <a href="standings.html">Standings</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <section class="hero">
+        <h1>NFL Loser Bowl</h1>
+        <p class="subtitle">
+          Pick a team to lose every week. Get it wrong twice and you're out.
+          Last one standing wins the pot.
+        </p>
+      </section>
+
+      <section class="card countdown-card">
+        <div class="label">Next Pick Deadline</div>
+        <div class="countdown-clock">
+          <div class="unit"><span class="num" id="cd-days">--</span><span class="sub">Days</span></div>
+          <div class="unit"><span class="num" id="cd-hours">--</span><span class="sub">Hours</span></div>
+          <div class="unit"><span class="num" id="cd-minutes">--</span><span class="sub">Min</span></div>
+          <div class="unit"><span class="num" id="cd-seconds">--</span><span class="sub">Sec</span></div>
+        </div>
+        <div class="countdown-deadline">
+          Deadline: <strong id="cd-deadline-label">&mdash;</strong>
+        </div>
+        <div class="countdown-note">
+          ⚠️ Picking a team that plays earlier in the week (Wednesday,
+          Thursday, etc.)? That pick locks at its own kickoff — not the
+          Sunday deadline. The <a href="pick.html">pick page</a> shows the
+          exact deadline for every team.
+        </div>
+      </section>
+
+      <div class="cta-row">
+        <a class="btn" href="pick.html">Make Your Pick →</a>
+        <a class="btn btn-secondary" href="standings.html">View Standings</a>
+      </div>
+
+      <div class="grid-2">
+        <section class="card">
+          <h2>📋 The Rules</h2>
+          <ul class="rules-list">
+            <li>Pick <strong>1 team you expect to LOSE</strong> each week.</li>
+            <li>
+              Pick deadline: <strong>Sunday at 1:00 PM EST</strong>. Picks for
+              Thursday night games must be in before kickoff.
+            </li>
+            <li><strong>No repeat picks</strong> — once you've picked a team, you can't pick them again.</li>
+            <li>
+              <strong>2 strikes</strong> and you're eliminated. A strike
+              happens when your picked team wins.
+            </li>
+            <li>
+              <strong>Buyback:</strong> if you're eliminated, you may
+              re-enter <strong>once</strong>, through Week 8, for $20.
+            </li>
+          </ul>
+        </section>
+
+        <section class="card">
+          <h2>💵 Entry Fee</h2>
+          <p>Get in for the season with a one-time entry fee.</p>
+          <div class="fee-row">
+            <div>
+              <div class="amount">$15</div>
+              <div>Standard entry</div>
+            </div>
+            <div>
+              Send via Venmo to<br />
+              <span class="venmo">@Josh-Zweig-2</span>
+            </div>
+          </div>
+          <p style="margin-top: 14px; color: var(--text-dim); font-size: 0.9rem;">
+            Buying back in after elimination (through Week 8) is
+            <strong style="color: var(--gold);">$20</strong>, also via Venmo.
+          </p>
+        </section>
+      </div>
+
+      <section class="card">
+        <h2>✅ How to Enter Your Weekly Pick</h2>
+        <ol class="steps">
+          <li>
+            Go to <a href="pick.html">Make Your Pick</a>.
+          </li>
+          <li>
+            Enter your name. First time? Make up a short PIN — you'll use
+            the same one every week to change or confirm your pick.
+          </li>
+          <li>
+            Pick the team you expect to <strong>LOSE</strong> from that
+            week's real matchups.
+          </li>
+          <li>Hit submit — that's it.</li>
+        </ol>
+        <p class="countdown-note" style="display: block; margin-top: 16px;">
+          The page only shows the <strong>current week's</strong> games, so
+          there's nothing to accidentally submit ahead of time. Only you
+          can see your own pick until its deadline passes — after that
+          it's visible to everyone on the <a href="standings.html">standings
+          page</a>.
+        </p>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      NFL Loser Bowl &mdash; 2026 Season
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+  <script>
+    startCountdown({
+      days: "cd-days",
+      hours: "cd-hours",
+      minutes: "cd-minutes",
+      seconds: "cd-seconds",
+      deadlineLabel: "cd-deadline-label",
+    });
+  </script>
+</body>
+</html>

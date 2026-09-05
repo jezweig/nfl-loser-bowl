@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Commissioner Admin — NFL Loser Bowl 2026</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <div class="brand">
+        <span class="ball">🏈</span>
+        <span>
+          NFL Loser Bowl
+          <small>2026 Season</small>
+        </span>
+      </div>
+      <nav class="site-nav">
+        <a href="index.html">Home</a>
+        <a href="pick.html">Make Pick</a>
+        <a href="history.html">My History</a>
+        <a href="standings.html">Standings</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <div id="gate-section"></div>
+      <div id="admin-section" hidden></div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">NFL Loser Bowl &mdash; 2026 Season — Commissioner tools</div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <script>
+    const ADMIN_KEY = "lb_admin_pass_v1";
+    const gateSection = document.getElementById("gate-section");
+    const adminSection = document.getElementById("admin-section");
+    let passphrase = sessionStorage.getItem(ADMIN_KEY) || "";
+    let data = { games: [], teams: {}, players: [], results: [] };
+    let selectedWeek = 1;
+
+    function renderGate(errorMsg) {
+      adminSection.hidden = true;
+      gateSection.hidden = false;
+      gateSection.innerHTML = `
+        <section class="card admin-gate">
+          <h2>🔒 Commissioner Access</h2>
+          ${errorMsg ? `<div class="form-error">${escapeHtml(errorMsg)}</div>` : ""}
+          <div class="field">
+            <label for="pass-input">Passphrase</label>
+            <input id="pass-input" type="password" autocomplete="off" />
+          </div>
+          <button class="btn" id="gate-btn" style="width:100%;">Enter →</button>
+        </section>
+      `;
+      document.getElementById("gate-btn").addEventListener("click", async () => {
+        const val = document.getElementById("pass-input").value;
+        if (!val) return;
+        // Verify by attempting a harmless no-op result write is not
+        // possible without knowing a game; instead verify lazily on the
+        // first real admin action, but do a cheap check now via a
+        // rebuy no-op against a bogus id — cheaper: just proceed, and any
+        // action will surface "wrong_passphrase" if it's incorrect.
+        passphrase = val;
+        sessionStorage.setItem(ADMIN_KEY, passphrase);
+        await loadAdmin();
+      });
+      document.getElementById("pass-input").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") document.getElementById("gate-btn").click();
+      });
+    }
+
+    async function loadAdmin() {
+      gateSection.hidden = true;
+      adminSection.hidden = false;
+      adminSection.innerHTML = `<div class="empty-state">Loading…</div>`;
+      try {
+        const [games, teams, players, results] = await Promise.all([
+          loadGames(),
+          loadTeams(),
+          loadPlayers(),
+          loadResults(),
+        ]);
+        data = { games, teams, players, results };
+        const now = new Date();
+        selectedWeek = isSeasonComplete(now, games) ? 18 : computeCurrentWeek(now, games);
+        renderAdmin();
+      } catch (err) {
+        adminSection.innerHTML = `<div class="card form-error">${escapeHtml(friendlyError(err))}</div>`;
+      }
+    }
+
+    function renderAdmin() {
+      const byWeek = groupByWeek(data.games);
+      const weekOptions = Object.keys(byWeek)
+        .map(Number)
+        .sort((a, b) => a - b)
+        .map((w) => `<option value="${w}" ${w === selectedWeek ? "selected" : ""}>Week ${w}</option>`)
+        .join("");
+
+      const weekGames = (byWeek[selectedWeek] || []).slice().sort(
+        (a, b) => new Date(a.kickoff) - new Date(b.kickoff)
+      );
+
+      const gameRows = weekGames
+        .map((g) => {
+          const result = data.results.find(
+            (r) => r.week === selectedWeek && r.home === g.home && r.away === g.away
+          );
+          const current = result ? result.winner : "";
+          return `<tr>
+            <td>${escapeHtml(data.teams[g.away] || g.away)} @ ${escapeHtml(data.teams[g.home] || g.home)}</td>
+            <td>${formatEt(new Date(g.kickoff))}</td>
+            <td>
+              <div class="inline-form">
+                <select data-home="${g.home}" data-away="${g.away}" class="result-select">
+                  <option value="" ${!current ? "selected" : ""}>Undecided</option>
+                  <option value="${g.home}" ${current === g.home ? "selected" : ""}>${escapeHtml(data.teams[g.home] || g.home)} won</option>
+                  <option value="${g.away}" ${current === g.away ? "selected" : ""}>${escapeHtml(data.teams[g.away] || g.away)} won</option>
+                  <option value="TIE" ${current === "TIE" ? "selected" : ""}>Tie</option>
+                </select>
+                <button class="small-btn save-result-btn" data-home="${g.home}" data-away="${g.away}">Save</button>
+                <span class="save-note" data-note-for="${g.home}-${g.away}"></span>
+              </div>
+            </td>
+          </tr>`;
+        })
+        .join("");
+
+      const playerRows = data.players
+        .map((p) => {
+          const status = p.rebought ? "Re-entered" : "—";
+          return `<tr>
+            <td>${escapeHtml(p.name)}</td>
+            <td>${p.rebought ? `<span class="tag">rebought, wk ${p.rebuy_week || "?"}</span>` : status}</td>
+            <td>
+              <div class="inline-form">
+                <input type="number" min="1" max="8" placeholder="rebuy wk" style="width:80px;" data-rebuy-week-for="${p.id}" value="${p.rebuy_week || ""}" />
+                <button class="small-btn rebuy-btn" data-player="${p.id}" data-set="true">Mark Rebought</button>
+                <button class="small-btn secondary rebuy-btn" data-player="${p.id}" data-set="false">Clear</button>
+              </div>
+            </td>
+            <td>
+              <div class="inline-form">
+                <input type="password" placeholder="new PIN" style="width:100px;" data-newpin-for="${p.id}" />
+                <button class="small-btn secondary reset-pin-btn" data-player="${p.id}">Reset PIN</button>
+              </div>
+            </td>
+          </tr>`;
+        })
+        .join("");
+
+      adminSection.innerHTML = `
+        <section class="hero" style="padding-top:10px;">
+          <h1 style="font-size:2rem;">Commissioner Tools</h1>
+        </section>
+
+        <section class="card">
+          <h2>Game Results</h2>
+          <div class="field" style="max-width:220px;">
+            <label for="week-select">Week</label>
+            <select id="week-select">${weekOptions}</select>
+          </div>
+          <div class="table-scroll">
+            <table class="admin-table">
+              <thead><tr><th>Matchup</th><th>Kickoff (ET)</th><th>Winner</th></tr></thead>
+              <tbody>${gameRows}</tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Players / Buybacks / PIN Reset</h2>
+          <div class="table-scroll">
+            <table class="admin-table">
+              <thead><tr><th>Name</th><th>Buyback status</th><th>Set rebuy</th><th>PIN reset</th></tr></thead>
+              <tbody>${playerRows}</tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <button class="btn btn-secondary" id="logout-btn">Log out of commissioner tools</button>
+        </section>
+      `;
+
+      document.getElementById("week-select").addEventListener("change", (e) => {
+        selectedWeek = Number(e.target.value);
+        renderAdmin();
+      });
+
+      document.getElementById("logout-btn").addEventListener("click", () => {
+        sessionStorage.removeItem(ADMIN_KEY);
+        passphrase = "";
+        renderGate();
+      });
+
+      adminSection.querySelectorAll(".save-result-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const home = btn.dataset.home;
+          const away = btn.dataset.away;
+          const select = adminSection.querySelector(`select[data-home="${home}"][data-away="${away}"]`);
+          const winner = select.value || null;
+          const note = adminSection.querySelector(`[data-note-for="${home}-${away}"]`);
+          btn.disabled = true;
+          try {
+            await adminSetResultRpc(passphrase, selectedWeek, home, away, winner);
+            note.textContent = "Saved ✓";
+            note.style.color = "var(--accent)";
+          } catch (err) {
+            if (String(err.message || "").includes("wrong_passphrase")) {
+              sessionStorage.removeItem(ADMIN_KEY);
+              renderGate("Incorrect passphrase.");
+              return;
+            }
+            note.textContent = friendlyError(err);
+            note.style.color = "var(--danger)";
+          } finally {
+            btn.disabled = false;
+          }
+        });
+      });
+
+      adminSection.querySelectorAll(".rebuy-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const playerId = Number(btn.dataset.player);
+          const setRebought = btn.dataset.set === "true";
+          const weekInput = adminSection.querySelector(`[data-rebuy-week-for="${playerId}"]`);
+          const rebuyWeek = setRebought ? Number(weekInput.value) || null : null;
+          btn.disabled = true;
+          try {
+            await adminSetRebuyRpc(passphrase, playerId, setRebought, rebuyWeek);
+            await loadAdmin();
+          } catch (err) {
+            if (String(err.message || "").includes("wrong_passphrase")) {
+              sessionStorage.removeItem(ADMIN_KEY);
+              renderGate("Incorrect passphrase.");
+              return;
+            }
+            alert(friendlyError(err));
+            btn.disabled = false;
+          }
+        });
+      });
+
+      adminSection.querySelectorAll(".reset-pin-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const playerId = Number(btn.dataset.player);
+          const input = adminSection.querySelector(`[data-newpin-for="${playerId}"]`);
+          const newPin = input.value.trim();
+          if (!/^\d{4,8}$/.test(newPin)) {
+            alert("New PIN must be 4-8 digits.");
+            return;
+          }
+          btn.disabled = true;
+          try {
+            await adminResetPinRpc(passphrase, playerId, newPin);
+            input.value = "";
+            alert("PIN reset. Tell the player their new PIN.");
+          } catch (err) {
+            if (String(err.message || "").includes("wrong_passphrase")) {
+              sessionStorage.removeItem(ADMIN_KEY);
+              renderGate("Incorrect passphrase.");
+              return;
+            }
+            alert(friendlyError(err));
+          } finally {
+            btn.disabled = false;
+          }
+        });
+      });
+    }
+
+    (function init() {
+      if (passphrase) {
+        loadAdmin();
+      } else {
+        renderGate();
+      }
+    })();
+  </script>
+</body>
+</html>

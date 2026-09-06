@@ -55,19 +55,57 @@
       myPicks: [],
       session: null,
       selectedTeam: null,
+      players: [],
     };
+    let showNewPlayerForm = false;
 
     function renderLogin(errorMsg) {
       pickSection.hidden = true;
       loginSection.hidden = false;
+
+      // After week 1, default to picking your name from the existing
+      // roster instead of free-text entry — prevents an accidental typo
+      // or name variant (e.g. "Josh Z") from silently creating a second
+      // entry for the same person. A genuinely new player can still join
+      // via the explicit "New player?" link below.
+      const lockNames =
+        state.currentWeek != null &&
+        state.currentWeek > 1 &&
+        state.players.length > 0 &&
+        !showNewPlayerForm;
+
+      const nameFieldHtml = lockNames
+        ? `
+          <div class="field">
+            <label for="name-select">Your name</label>
+            <select id="name-select">
+              <option value="" disabled selected>Select your name…</option>
+              ${state.players
+                .map((p) => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}</option>`)
+                .join("")}
+            </select>
+            <div class="field-hint">
+              Don't see your name? <a href="#" id="new-player-link">New player? Click here</a>.
+            </div>
+          </div>
+        `
+        : `
+          <div class="field">
+            <label for="name-input">Your name</label>
+            <input id="name-input" type="text" autocomplete="name" placeholder="e.g. Josh Zweig" />
+            ${
+              state.currentWeek != null && state.currentWeek > 1 && state.players.length > 0
+                ? `<div class="field-hint">Already picked before? <a href="#" id="existing-player-link">Choose your name from the list</a> instead.</div>`
+                : ""
+            }
+          </div>
+        `;
+
       loginSection.innerHTML = `
         <section class="card login-card">
           <h2>Who's picking?</h2>
           ${errorMsg ? `<div class="form-error">${escapeHtml(errorMsg)}</div>` : ""}
-          <div class="field">
-            <label for="name-input">Your name</label>
-            <input id="name-input" type="text" autocomplete="name" placeholder="e.g. Josh Zweig" />
-          </div>
+          ${nameFieldHtml}
           <div class="field">
             <label for="pin-input">Your PIN (4-8 digits)</label>
             <input id="pin-input" type="password" inputmode="numeric" autocomplete="off" placeholder="First time? Make one up." />
@@ -85,10 +123,27 @@
       document.getElementById("pin-input").addEventListener("keydown", (e) => {
         if (e.key === "Enter") handleLogin();
       });
+      const newPlayerLink = document.getElementById("new-player-link");
+      if (newPlayerLink) {
+        newPlayerLink.addEventListener("click", (e) => {
+          e.preventDefault();
+          showNewPlayerForm = true;
+          renderLogin();
+        });
+      }
+      const existingPlayerLink = document.getElementById("existing-player-link");
+      if (existingPlayerLink) {
+        existingPlayerLink.addEventListener("click", (e) => {
+          e.preventDefault();
+          showNewPlayerForm = false;
+          renderLogin();
+        });
+      }
     }
 
     async function handleLogin() {
-      const name = document.getElementById("name-input").value.trim();
+      const nameEl = document.getElementById("name-select") || document.getElementById("name-input");
+      const name = (nameEl ? nameEl.value : "").trim();
       const pin = document.getElementById("pin-input").value.trim();
       const btn = document.getElementById("login-btn");
       if (!name) return renderLogin("Please enter your name.");
@@ -106,9 +161,16 @@
       }
     }
 
-    function switchPlayer() {
+    async function switchPlayer() {
       clearSession();
       state.session = null;
+      showNewPlayerForm = false;
+      try {
+        state.players = await loadPlayers();
+      } catch {
+        // Keep whatever roster we already have; renderLogin() falls back
+        // to free-text entry if state.players ends up empty.
+      }
       renderLogin();
     }
 
@@ -274,7 +336,22 @@
       });
     }
 
-    (function init() {
+    (async function init() {
+      // Prefetch the schedule + roster so renderLogin() can decide
+      // whether to lock the name field to a dropdown (week > 1 with an
+      // existing roster) before it's ever shown, including on the
+      // wrong-PIN error path inside loadPickScreen().
+      try {
+        const [games, players] = await Promise.all([loadGames(), loadPlayers()]);
+        state.games = games;
+        state.players = players;
+        const now = new Date();
+        state.currentWeek = isSeasonComplete(now, games) ? null : computeCurrentWeek(now, games);
+      } catch {
+        // Fall back silently to free-text name entry — renderLogin()
+        // treats a null currentWeek / empty players list that way.
+      }
+
       const session = loadSession();
       if (session) {
         state.session = session;

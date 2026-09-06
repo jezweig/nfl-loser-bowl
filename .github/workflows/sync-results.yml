@@ -1,0 +1,20 @@
+name: Sync NFL results
+
+on:
+  schedule:
+    # Every hour, year-round. Cheap and simple — the script itself only
+    # does real work when a game is actually past kickoff and undecided.
+    - cron: "0 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/sync-results.mjs
+        env:
+          ADMIN_PASSPHRASE: ${{ secrets.ADMIN_PASSPHRASE }}

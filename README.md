@@ -47,7 +47,30 @@ password directly).
    designed to be public/committed — access is controlled by the
    Row Level Security rules in `supabase/schema.sql`, not by hiding it.
 
-### 4. Deploy
+### 4. Automatic result syncing (optional but recommended)
+
+A scheduled GitHub Action (`.github/workflows/sync-results.yml`) checks
+ESPN's public scoreboard every hour and automatically records final scores
+for any game that's finished but not yet entered — so results and
+standings update themselves without you opening `admin.html` each week.
+It writes through the exact same `admin_set_result` function the admin
+page uses, so it needs your commissioner passphrase, stored as a secret
+(never committed to the repo):
+
+1. Repo **Settings -> Secrets and variables -> Actions -> New repository
+   secret**.
+2. Name: `ADMIN_PASSPHRASE`. Value: the same passphrase you set in
+   `admin_config` in step 2 above.
+3. That's it — it starts running on its hourly schedule automatically. You
+   can also trigger it on demand from the **Actions** tab (select "Sync
+   NFL results" -> **Run workflow**), e.g. right after Monday Night
+   Football ends if you don't want to wait for the next hourly run.
+
+`admin.html` still works exactly as before — use it any time to fix a
+result the automation got wrong, enter one early, or handle buybacks/PIN
+resets (which the automation doesn't touch).
+
+### 5. Deploy
 
 Push this repo and enable GitHub Pages (repo **Settings -> Pages**, source
 = this branch/`main`, root folder). Any other static host works the same
@@ -83,9 +106,20 @@ where week = 18 and home = 'KC' and away = 'LV';
 
 ## Commissioner workflow each week
 
-1. After games finish, open `admin.html`, enter your passphrase.
-2. Pick the week, and for each game select who won (or "Tie"). Strikes,
-   eliminations, and the standings page all update automatically — no
-   need to touch anything per-player.
-3. If someone eliminated buys back in (through Week 8, $20 via Venmo),
-   mark them "Rebought" with the week they re-entered.
+With the automation set up (step 4 above), results record themselves
+within an hour of each game ending — nothing to do most weeks. All that's
+left manually:
+
+1. If someone eliminated buys back in (through Week 8, $20 via Venmo),
+   open `admin.html` and mark them "Rebought" with the week they
+   re-entered.
+2. Spot-check `standings.html` occasionally; if a result looks wrong (a
+   postponed/rare edge case ESPN reported oddly), fix it by hand in
+   `admin.html` — the automation will just leave it alone once a result
+   exists for that game.
+
+Without the automation set up, do this manually instead: after games
+finish, open `admin.html`, enter your passphrase, pick the week, and for
+each game select who won (or "Tie"). Strikes, eliminations, and the
+standings page all update automatically either way — no need to touch
+anything per-player.

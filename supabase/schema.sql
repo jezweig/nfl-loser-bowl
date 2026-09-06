@@ -355,8 +355,11 @@ create table if not exists players (
   pin_hash text not null,
   rebought boolean not null default false,
   rebuy_week int,
+  paid boolean not null default false,
   created_at timestamptz not null default now()
 );
+
+alter table players add column if not exists paid boolean not null default false;
 
 create table if not exists picks (
   id bigserial primary key,
@@ -410,7 +413,7 @@ drop policy if exists players_read on players;
 create policy players_read on players for select using (true);
 -- pin_hash is never exposed: grant column-level select excluding it.
 revoke select on players from anon, authenticated;
-grant select (id, slug, name, rebought, rebuy_week, created_at) on players to anon, authenticated;
+grant select (id, slug, name, rebought, rebuy_week, paid, created_at) on players to anon, authenticated;
 
 drop policy if exists picks_read_locked on picks;
 create policy picks_read_locked on picks for select using (locked_at <= now());
@@ -614,6 +617,26 @@ begin
 end;
 $$;
 
+-- ── RPC: admin — mark a player as paid ────────────────────────────────
+
+create or replace function admin_set_paid(p_passphrase text, p_player_id bigint, p_paid boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_hash text;
+begin
+  select passphrase_hash into v_hash from admin_config where id = 1;
+  if v_hash is null or v_hash <> extensions.crypt(p_passphrase, v_hash) then
+    raise exception 'wrong_passphrase';
+  end if;
+
+  update players set paid = p_paid where id = p_player_id;
+end;
+$$;
+
 -- ── RPC: admin — reset a forgotten PIN ────────────────────────────────
 
 create or replace function admin_reset_pin(p_passphrase text, p_player_id bigint, p_new_pin text)
@@ -655,4 +678,5 @@ grant execute on function submit_pick(bigint, text, int, text) to anon, authenti
 grant execute on function get_my_picks(bigint, text) to anon, authenticated;
 grant execute on function admin_set_result(text, int, text, text, text) to anon, authenticated;
 grant execute on function admin_set_rebuy(text, bigint, boolean, int) to anon, authenticated;
+grant execute on function admin_set_paid(text, bigint, boolean) to anon, authenticated;
 grant execute on function admin_reset_pin(text, bigint, text) to anon, authenticated;

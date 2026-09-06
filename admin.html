@@ -140,6 +140,13 @@
           const status = p.rebought ? "Re-entered" : "—";
           return `<tr>
             <td>${escapeHtml(p.name)}</td>
+            <td>
+              <div class="inline-form">
+                <span class="tag" style="background:${p.paid ? "rgba(74,222,128,0.15)" : "rgba(248,113,113,0.15)"}; color:${p.paid ? "var(--accent)" : "var(--danger)"};">${p.paid ? "Paid" : "Unpaid"}</span>
+                <button class="small-btn paid-btn" data-player="${p.id}" data-set="true">Mark Paid</button>
+                <button class="small-btn secondary paid-btn" data-player="${p.id}" data-set="false">Clear</button>
+              </div>
+            </td>
             <td>${p.rebought ? `<span class="tag">rebought, wk ${p.rebuy_week || "?"}</span>` : status}</td>
             <td>
               <div class="inline-form">
@@ -181,7 +188,7 @@
           <h2>Players / Buybacks / PIN Reset</h2>
           <div class="table-scroll">
             <table class="admin-table">
-              <thead><tr><th>Name</th><th>Buyback status</th><th>Set rebuy</th><th>PIN reset</th></tr></thead>
+              <thead><tr><th>Name</th><th>Paid</th><th>Buyback status</th><th>Set rebuy</th><th>PIN reset</th></tr></thead>
               <tbody>${playerRows}</tbody>
             </table>
           </div>
@@ -238,6 +245,26 @@
           btn.disabled = true;
           try {
             await adminSetRebuyRpc(passphrase, playerId, setRebought, rebuyWeek);
+            await loadAdmin();
+          } catch (err) {
+            if (String(err.message || "").includes("wrong_passphrase")) {
+              sessionStorage.removeItem(ADMIN_KEY);
+              renderGate("Incorrect passphrase.");
+              return;
+            }
+            alert(friendlyError(err));
+            btn.disabled = false;
+          }
+        });
+      });
+
+      adminSection.querySelectorAll(".paid-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const playerId = Number(btn.dataset.player);
+          const setPaid = btn.dataset.set === "true";
+          btn.disabled = true;
+          try {
+            await adminSetPaidRpc(passphrase, playerId, setPaid);
             await loadAdmin();
           } catch (err) {
             if (String(err.message || "").includes("wrong_passphrase")) {

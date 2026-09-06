@@ -410,6 +410,21 @@ table.standings tr.eliminated {
 .status-badge.eliminated { background: rgba(248, 113, 113, 0.15); color: var(--danger); }
 .status-badge.rebought { background: rgba(250, 204, 21, 0.15); color: var(--gold); }
 
+.paid-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+
+.paid-tag.paid { background: rgba(74, 222, 128, 0.15); color: var(--accent); }
+.paid-tag.unpaid { background: rgba(148, 163, 184, 0.15); color: var(--text-dim); }
+
 .strikes-cell .strike-icon {
   color: var(--danger);
   font-size: 1rem;

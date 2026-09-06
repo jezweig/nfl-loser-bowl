@@ -149,7 +149,7 @@ async function loadTeams() {
 async function loadPlayers() {
   const { data, error } = await sb
     .from("players")
-    .select("id,name,slug,rebought,rebuy_week")
+    .select("id,name,slug,rebought,rebuy_week,paid")
     .order("name");
   if (error) throw error;
   return data;
@@ -216,6 +216,15 @@ async function adminSetRebuyRpc(passphrase, playerId, rebought, rebuyWeek) {
     p_player_id: playerId,
     p_rebought: rebought,
     p_rebuy_week: rebuyWeek,
+  });
+  if (error) throw error;
+}
+
+async function adminSetPaidRpc(passphrase, playerId, paid) {
+  const { error } = await sb.rpc("admin_set_paid", {
+    p_passphrase: passphrase,
+    p_player_id: playerId,
+    p_paid: paid,
   });
   if (error) throw error;
 }

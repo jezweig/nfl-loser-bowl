@@ -14,10 +14,11 @@ public standings once picks lock.
 - `history.html` — a player's own full-season pick history and strike
   count (only visible to them, verified by their PIN).
 - `standings.html` — the public grid of every player's picks/strikes/
-  status. A player's current-week pick stays hidden from everyone else
-  until its deadline passes, then it's revealed to all.
+  status/paid status. A player's current-week pick stays hidden from
+  everyone else until its deadline passes, then it's revealed to all.
 - `admin.html` — commissioner-only tools (passphrase-gated): record each
-  week's game results, and manage buybacks/PIN resets.
+  week's game results, mark players paid, and manage buybacks/PIN
+  resets.
 
 ## One-time setup
 
@@ -110,10 +111,13 @@ With the automation set up (step 4 above), results record themselves
 within an hour of each game ending — nothing to do most weeks. All that's
 left manually:
 
-1. If someone eliminated buys back in (through Week 8, $20 via Venmo),
+1. When someone Venmos their entry fee, open `admin.html` and click
+   "Mark Paid" next to their name — this shows as a public "Paid"/"Unpaid"
+   tag on `standings.html` so players can see who still owes.
+2. If someone eliminated buys back in (through Week 8, $20 via Venmo),
    open `admin.html` and mark them "Rebought" with the week they
    re-entered.
-2. Spot-check `standings.html` occasionally; if a result looks wrong (a
+3. Spot-check `standings.html` occasionally; if a result looks wrong (a
    postponed/rare edge case ESPN reported oddly), fix it by hand in
    `admin.html` — the automation will just leave it alone once a result
    exists for that game.

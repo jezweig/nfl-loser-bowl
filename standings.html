@@ -44,7 +44,10 @@
           ends your run for good (no third life). A player's current-week
           pick stays hidden from everyone else here until its deadline
           passes — check <a href="history.html">My History</a> to confirm
-          your own pick went through.
+          your own pick went through. The <strong>Paid</strong>/<strong>Unpaid</strong>
+          tag next to each name tracks entry fees — Venmo
+          <span class="venmo" style="font-size:0.85em;">@Josh-Zweig-2</span>
+          if you're marked unpaid.
         </p>
         <div class="table-scroll">
           <div id="standings-table-container">
@@ -112,7 +115,7 @@
             const strikeIcon = strikes > 0 ? `<span class="strike-icon">${"✗".repeat(strikes)}</span>` : "&mdash;";
 
             return `<tr class="${eliminated ? "eliminated" : ""}">
-              <td class="name-cell">${escapeHtml(player.name)}</td>
+              <td class="name-cell">${escapeHtml(player.name)}<span class="paid-tag ${player.paid ? "paid" : "unpaid"}">${player.paid ? "Paid" : "Unpaid"}</span></td>
               ${cells}
               <td class="strikes-cell">${strikeIcon}</td>
               <td><span class="status-badge ${status}">${statusLabel}</span></td>

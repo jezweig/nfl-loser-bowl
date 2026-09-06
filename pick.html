@@ -63,16 +63,14 @@
       pickSection.hidden = true;
       loginSection.hidden = false;
 
-      // After week 1, default to picking your name from the existing
-      // roster instead of free-text entry — prevents an accidental typo
+      // Whenever a roster already exists, default to picking your name
+      // from it instead of free-text entry — prevents an accidental typo
       // or name variant (e.g. "Josh Z") from silently creating a second
       // entry for the same person. A genuinely new player can still join
-      // via the explicit "New player?" link below.
-      const lockNames =
-        state.currentWeek != null &&
-        state.currentWeek > 1 &&
-        state.players.length > 0 &&
-        !showNewPlayerForm;
+      // via the explicit "New player?" link below. (Naturally falls back
+      // to free-text for the very first pick of the season, before
+      // anyone has registered yet.)
+      const lockNames = state.players.length > 0 && !showNewPlayerForm;
 
       const nameFieldHtml = lockNames
         ? `
@@ -94,7 +92,7 @@
             <label for="name-input">Your name</label>
             <input id="name-input" type="text" autocomplete="name" placeholder="e.g. Josh Zweig" />
             ${
-              state.currentWeek != null && state.currentWeek > 1 && state.players.length > 0
+              state.players.length > 0
                 ? `<div class="field-hint">Already picked before? <a href="#" id="existing-player-link">Choose your name from the list</a> instead.</div>`
                 : ""
             }
@@ -337,19 +335,14 @@
     }
 
     (async function init() {
-      // Prefetch the schedule + roster so renderLogin() can decide
-      // whether to lock the name field to a dropdown (week > 1 with an
-      // existing roster) before it's ever shown, including on the
-      // wrong-PIN error path inside loadPickScreen().
+      // Prefetch the roster so renderLogin() can decide whether to lock
+      // the name field to a dropdown before it's ever shown, including
+      // on the wrong-PIN error path inside loadPickScreen().
       try {
-        const [games, players] = await Promise.all([loadGames(), loadPlayers()]);
-        state.games = games;
-        state.players = players;
-        const now = new Date();
-        state.currentWeek = isSeasonComplete(now, games) ? null : computeCurrentWeek(now, games);
+        state.players = await loadPlayers();
       } catch {
         // Fall back silently to free-text name entry — renderLogin()
-        // treats a null currentWeek / empty players list that way.
+        // treats an empty players list that way.
       }
 
       const session = loadSession();

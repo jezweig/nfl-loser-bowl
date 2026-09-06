@@ -40,10 +40,11 @@
         </div>
         <p style="color: var(--text-dim); font-size: 0.88rem; margin: 4px 0 18px;">
           2 strikes = eliminated. Eliminated players may buy back in once,
-          through Week 8, for $20. A player's current-week pick stays
-          hidden from everyone else here until its deadline passes — check
-          <a href="history.html">My History</a> to confirm your own pick
-          went through.
+          through Week 8, for $20 — after that, just <strong>1 strike</strong>
+          ends your run for good (no third life). A player's current-week
+          pick stays hidden from everyone else here until its deadline
+          passes — check <a href="history.html">My History</a> to confirm
+          your own pick went through.
         </p>
         <div class="table-scroll">
           <div id="standings-table-container">
@@ -92,7 +93,7 @@
           .map((player) => {
             const myPicks = Object.values(picksByPlayer[player.id] || {});
             const strikes = computeStrikes(myPicks, results, player.rebought, player.rebuy_week);
-            const eliminated = strikes >= 2;
+            const eliminated = isEliminated(strikes, player.rebought);
             const status = eliminated ? "eliminated" : player.rebought ? "rebought" : "active";
             const statusLabel = eliminated ? "Eliminated" : player.rebought ? "Re-entered" : "Active";
 

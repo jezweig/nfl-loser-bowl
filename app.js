@@ -259,6 +259,13 @@ function computeStrikes(picks, results, rebought, rebuyWeek) {
   return count;
 }
 
+// A rebuy is a second (and last) life: strikes before the rebuy week are
+// forgiven (see computeStrikes above), but only ONE strike after buying
+// back in is enough to be out for good, not two.
+function isEliminated(strikes, rebought) {
+  return rebought ? strikes >= 1 : strikes >= 2;
+}
+
 function resultForPick(pick, results) {
   const r = results.find(
     (res) =>

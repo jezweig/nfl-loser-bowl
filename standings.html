@@ -36,15 +36,17 @@
         <div class="legend">
           <span><span class="dot safe"></span>Survived (team lost)</span>
           <span><span class="dot strike"></span>Strike (team won)</span>
-          <span><span class="dot pending"></span>🔒 Not yet revealed / no pick</span>
+          <span><span class="dot locked"></span>🔒 Locked in, not revealed yet</span>
+          <span>&mdash; No pick submitted</span>
         </div>
         <p style="color: var(--text-dim); font-size: 0.88rem; margin: 4px 0 18px;">
           2 strikes = eliminated. Eliminated players may buy back in once,
           through Week 8, for $20 — after that, just <strong>1 strike</strong>
           ends your run for good (no third life). A player's current-week
           pick stays hidden from everyone else here until its deadline
-          passes — check <a href="history.html">My History</a> to confirm
-          your own pick went through. The <strong>Paid</strong>/<strong>Unpaid</strong>
+          passes (shown as "Locked in" once they've submitted) — check
+          <a href="history.html">My History</a> to confirm your own pick
+          went through. The <strong>Paid</strong>/<strong>Unpaid</strong>
           tag next to each name tracks entry fees — Venmo
           <span class="venmo" style="font-size:0.85em;">@Josh-Zweig-2</span>
           if you're marked unpaid.
@@ -105,6 +107,10 @@
               const pick = (picksByPlayer[player.id] || {})[w];
               if (!pick) {
                 cells += `<td>&mdash;</td>`;
+                continue;
+              }
+              if (pick.team == null) {
+                cells += `<td><span class="cell-pick"><span class="result locked">🔒 Locked in</span></span></td>`;
                 continue;
               }
               const result = resultForPick(pick, results);

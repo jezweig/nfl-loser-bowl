@@ -329,6 +329,7 @@ footer.site-footer {
 .dot.safe { background: var(--accent); }
 .dot.strike { background: var(--danger); }
 .dot.pending { background: var(--text-dim); }
+.dot.locked { background: var(--gold); }
 
 .table-scroll {
   overflow-x: auto;
@@ -398,6 +399,7 @@ table.standings tr.eliminated {
 .result.safe { color: var(--accent); }
 .result.strike { color: var(--danger); }
 .result.pending { color: var(--text-dim); }
+.result.locked { color: var(--gold); }
 
 .status-badge {
   padding: 4px 10px;

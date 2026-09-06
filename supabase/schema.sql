@@ -421,6 +421,28 @@ grant select on picks to anon, authenticated;
 -- No insert/update/delete policies for anon — all writes go through the
 -- SECURITY DEFINER functions below.
 
+-- public_picks: lets the standings page tell "submitted, still locked"
+-- apart from "never submitted" — something the raw `picks` RLS policy
+-- above can't do, since it hides the whole row (not just the team) until
+-- locked_at passes. This view reveals that a row exists for every
+-- submitted pick, but masks WHICH team was picked until its lock time.
+-- (Owned by the same role as `picks`, so — per Postgres's default
+-- table-owner RLS exemption, since `picks` was never put under FORCE ROW
+-- LEVEL SECURITY — it can see every row regardless of lock_at and apply
+-- the mask itself, rather than being restricted by the policy above.)
+drop view if exists public_picks;
+create view public_picks as
+select
+  id,
+  player_id,
+  week,
+  case when locked_at <= now() then team else null end as team,
+  locked_at,
+  submitted_at
+from picks;
+
+grant select on public_picks to anon, authenticated;
+
 drop policy if exists results_read on results;
 create policy results_read on results for select using (true);
 grant select on results to anon, authenticated;

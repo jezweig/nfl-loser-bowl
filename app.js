@@ -156,8 +156,10 @@ async function loadPlayers() {
 }
 
 async function loadVisiblePicks() {
-  // RLS only returns rows whose locked_at has passed.
-  const { data, error } = await sb.from("picks").select("*");
+  // The public_picks view returns a row for every submitted pick (so the
+  // UI can tell "submitted, still locked" apart from "no pick at all"),
+  // but masks `team` as null until that pick's lock time passes.
+  const { data, error } = await sb.from("public_picks").select("*");
   if (error) throw error;
   return data;
 }

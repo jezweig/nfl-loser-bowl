@@ -1,0 +1,43 @@
+name: Send weekly pick summary
+
+on:
+  schedule:
+    # Hourly, every day. The script itself only sends once the DB-computed
+    # pick_summary_time() (Sunday 1:30pm ET, DST-safe) has passed, and only
+    # once per week (admin_claim_email_send) — cron cadence here is just
+    # how promptly we notice, not the real gate.
+    - cron: "40 * * * *"
+  workflow_dispatch: {}
+
+# The script writes a chart PNG into email-assets/; the "Commit chart
+# image" step below pushes it back to main so GitHub Pages serves it at a
+# real URL before any recipient opens the email.
+permissions:
+  contents: write
+
+jobs:
+  pick-summary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: node scripts/send-pick-summary.mjs
+        env:
+          ADMIN_PASSPHRASE: ${{ secrets.ADMIN_PASSPHRASE }}
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+          FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
+      - name: Commit chart image
+        run: |
+          if [ -n "$(git status --porcelain email-assets/)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add email-assets/
+            git commit -m "Add pick summary chart"
+            git push
+          else
+            echo "No new chart to commit."
+          fi

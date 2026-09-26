@@ -73,16 +73,36 @@ resets (which the automation doesn't touch).
 
 ### 5. Automatic emails (optional)
 
-Two more scheduled GitHub Actions use [Brevo](https://www.brevo.com) (a
+Four scheduled GitHub Actions use [Brevo](https://www.brevo.com) (a
 transactional email API — just an API key, no Gmail/OAuth account linking)
-to email players directly:
+to email players directly, branded to match the site's dark theme:
 
-- **`.github/workflows/send-reminders.yml`** — Sundays ~11:30am ET, emails
-  anyone with an address on file who hasn't picked yet and isn't already
-  eliminated, with the deadline and a link to `pick.html`.
-- **`.github/workflows/send-recap.yml`** — Sundays ~2-3pm ET (after the 1pm
-  deadline), emails everyone with an address on file who picked what that
-  week.
+- **`.github/workflows/send-friday-reminder.yml`** — Friday 1:00 PM ET,
+  emails every active (non-eliminated) player with an address on file, a
+  heads-up for the week ahead (says whether they've already picked), plus
+  that week's games.
+- **`.github/workflows/send-sunday-reminder.yml`** — Sunday 10:00 AM ET,
+  last-call email to only the players who *still* haven't picked.
+- **`.github/workflows/send-pick-summary.yml`** — Sunday 1:30 PM ET (30 min
+  after the deadline), emails everyone a pie chart of who picked what, plus
+  a full team-by-team table of names. The chart is rendered to a PNG (email
+  clients can't run JS or reliably show inline SVG) and committed to
+  `email-assets/week-<N>-picks.png`, which GitHub Pages then serves at a
+  real URL the email links to.
+- **`.github/workflows/send-weekly-results.yml`** — not on a fixed clock;
+  runs hourly and fires as soon as every game in a week has a final result,
+  emailing that week's results, who got struck, and how many players
+  remain.
+
+All four run on an **hourly cron**, not a single fixed UTC time — each
+script asks the database "has this week's target moment passed yet?" (via
+DST-safe SQL functions like `sunday_reminder_time()`) before doing
+anything, so the real send time is always correct across the DST change
+mid-season without the workflow YAML needing two different cron lines. A
+per-(kind, week) `email_log` claim (`admin_claim_email_send`) then
+guarantees each of the four goes out exactly once per week regardless of
+how many hourly runs see the window open — so re-running any of them
+manually from the **Actions** tab is always safe.
 
 Players opt in by entering an email on the `pick.html` login screen
 (optional, never shown to other players — it's excluded from the public
@@ -103,12 +123,12 @@ To turn this on:
    - `FROM_EMAIL` — e.g. `NFL Loser Bowl <you@example.com>`, matching the
      sender you verified in step 2.
 5. If you're starting mid-season, run `supabase/add_email_notifications.sql`
-   once in the Supabase SQL editor (schema.sql already includes this for
-   new setups).
-
-Both workflows are idempotent per week (guarded by an `email_log` table via
-`admin_claim_email_send`), so re-running one manually from the **Actions**
-tab is always safe — it just no-ops if that week's email already went out.
+   and then `supabase/add_scheduled_email_times.sql` once in the Supabase
+   SQL editor, in that order (schema.sql already includes both for new
+   setups).
+6. The pick-summary workflow needs `npm ci` (for the chart-rendering
+   `sharp` dependency) and push access to commit the chart image — both are
+   already wired up in the workflow file, nothing extra to configure.
 
 ### 6. Deploy
 

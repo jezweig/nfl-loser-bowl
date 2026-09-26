@@ -1,0 +1,9 @@
+{
+  "name": "nfl-loser-bowl",
+  "private": true,
+  "type": "module",
+  "description": "Scheduled-email scripts (chart rendering) for the NFL Loser Bowl pool site.",
+  "dependencies": {
+    "sharp": "^0.35.4"
+  }
+}

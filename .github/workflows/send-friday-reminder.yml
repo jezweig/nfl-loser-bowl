@@ -1,0 +1,24 @@
+name: Send Friday pick reminder
+
+on:
+  schedule:
+    # Hourly, every day. The script itself only sends once the DB-computed
+    # friday_reminder_time() (Friday 1pm ET, DST-safe) has passed, and only
+    # once per week (admin_claim_email_send) — cron cadence here is just
+    # how promptly we notice, not the real gate.
+    - cron: "20 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: node scripts/send-friday-reminder.mjs
+        env:
+          ADMIN_PASSPHRASE: ${{ secrets.ADMIN_PASSPHRASE }}
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+          FROM_EMAIL: ${{ secrets.FROM_EMAIL }}

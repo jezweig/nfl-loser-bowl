@@ -1,0 +1,25 @@
+name: Send weekly results
+
+on:
+  schedule:
+    # Hourly, every day, offset 10 minutes after sync-results.yml so a
+    # week's final games are likely already recorded by the time this
+    # checks. The script itself only sends once EVERY game in a week has a
+    # recorded winner, and only once per week (admin_claim_email_send) — it
+    # also catches up on any earlier week it missed, not just the latest.
+    - cron: "10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  results:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: node scripts/send-weekly-results.mjs
+        env:
+          ADMIN_PASSPHRASE: ${{ secrets.ADMIN_PASSPHRASE }}
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+          FROM_EMAIL: ${{ secrets.FROM_EMAIL }}

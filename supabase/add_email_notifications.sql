@@ -90,7 +90,10 @@ as $$
 declare
   v_hash text;
 begin
-  select passphrase_hash into v_hash from admin_config where id = 1;
+  -- admin_config.id must be qualified here: this function's own OUT
+  -- parameter list (RETURNS TABLE(id bigint, ...)) declares a PL/pgSQL
+  -- variable named "id" that shadows the bare column reference otherwise.
+  select passphrase_hash into v_hash from admin_config where admin_config.id = 1;
   if v_hash is null or v_hash <> extensions.crypt(p_passphrase, v_hash) then
     raise exception 'wrong_passphrase';
   end if;

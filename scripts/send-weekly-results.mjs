@@ -110,10 +110,14 @@ async function sendResultsForWeek(week, { games, results, teamName, players, pic
     if (resultForPick(weekPick, results) !== "strike") continue;
     const strikesNow = computeStrikes(picksByPlayer[p.id] || [], results, p.rebought, p.rebuy_week);
     const eliminated = isEliminated(strikesNow, p.rebought);
-    const maxStrikes = p.rebought ? 1 : 2;
-    const statusHtml = eliminated
-      ? `<strong style="color:${COLORS.danger};">Eliminated</strong> <span style="color:${COLORS.textDim};">(${strikesNow}/${maxStrikes} strikes)</span>`
-      : `<span style="color:${COLORS.warn};">${strikesNow}/${maxStrikes} strikes</span> <span style="color:${COLORS.textDim};">&mdash; ${maxStrikes - strikesNow} more and you're out</span>`;
+    let statusHtml;
+    if (eliminated && p.rebought) {
+      statusHtml = `<strong style="color:${COLORS.danger};">Eliminated</strong> <span style="color:${COLORS.textDim};">&mdash; no cushion left after your buyback</span>`;
+    } else if (eliminated) {
+      statusHtml = `<strong style="color:${COLORS.danger};">Eliminated</strong> <span style="color:${COLORS.textDim};">(${strikesNow}/2 strikes)</span>`;
+    } else {
+      statusHtml = `<span style="color:${COLORS.warn};">${strikesNow}/2 strikes</span> <span style="color:${COLORS.textDim};">&mdash; ${2 - strikesNow} more and you're out</span>`;
+    }
     strikeRows.push([
       escapeHtml(p.name),
       escapeHtml(teamName[weekPick.team] || weekPick.team),

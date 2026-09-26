@@ -99,7 +99,10 @@ async function sendResultsForWeek(week, { games, results, teamName, players, pic
   const gamesResultTable = dataTable(["Matchup", "Winner"], gameRows);
 
   // Everyone whose Week-`week` pick turned out to be a strike (their
-  // picked team WON), plus their status after this week's result.
+  // picked team WON), plus their status after this week's result. Status
+  // text spells out the elimination threshold explicitly (2 strikes normally,
+  // 1 after a buyback) rather than just showing a bare count, since that
+  // rule is easy to forget mid-season.
   const strikeRows = [];
   for (const p of players) {
     const weekPick = (picksByPlayer[p.id] || []).find((pk) => pk.week === week);
@@ -107,17 +110,20 @@ async function sendResultsForWeek(week, { games, results, teamName, players, pic
     if (resultForPick(weekPick, results) !== "strike") continue;
     const strikesNow = computeStrikes(picksByPlayer[p.id] || [], results, p.rebought, p.rebuy_week);
     const eliminated = isEliminated(strikesNow, p.rebought);
+    const maxStrikes = p.rebought ? 1 : 2;
+    const statusHtml = eliminated
+      ? `<strong style="color:${COLORS.danger};">Eliminated</strong> <span style="color:${COLORS.textDim};">(${strikesNow}/${maxStrikes} strikes)</span>`
+      : `<span style="color:${COLORS.warn};">${strikesNow}/${maxStrikes} strikes</span> <span style="color:${COLORS.textDim};">&mdash; ${maxStrikes - strikesNow} more and you're out</span>`;
     strikeRows.push([
       escapeHtml(p.name),
       escapeHtml(teamName[weekPick.team] || weekPick.team),
-      eliminated
-        ? `<strong style="color:${COLORS.danger};">Eliminated</strong>`
-        : `<span style="color:${COLORS.warn};">${strikesNow} strike${strikesNow === 1 ? "" : "s"}</span>`,
+      statusHtml,
     ]);
   }
   const strikesTable =
     strikeRows.length > 0
-      ? dataTable(["Player", "Picked (lost the bet)", "Status"], strikeRows)
+      ? `<p style="margin:0 0 10px;font-size:13px;color:${COLORS.textDim};">Two strikes and you're out &mdash; just one after a buyback.</p>` +
+        dataTable(["Player", "Picked (lost the bet)", "Status"], strikeRows)
       : `<p style="margin:0 0 16px;font-size:14px;color:${COLORS.accent};">Nobody got hit this week &mdash; a clean week for the whole pool.</p>`;
 
   const remaining = players.filter((p) => {

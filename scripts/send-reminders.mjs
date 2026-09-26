@@ -6,10 +6,10 @@
 // so a manual re-run (workflow_dispatch) never double-sends for the same week.
 
 import { rpc, sbFetch } from "./lib/supabase.mjs";
-import { sendEmail } from "./lib/resend.mjs";
+import { sendEmail } from "./lib/brevo.mjs";
 
 const ADMIN_PASSPHRASE = process.env.ADMIN_PASSPHRASE;
-const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
 const FROM_EMAIL = process.env.FROM_EMAIL;
 const SITE_URL = "https://jezweig.github.io/nfl-loser-bowl/";
 
@@ -46,8 +46,8 @@ function formatDeadline(iso) {
 }
 
 async function main() {
-  if (!ADMIN_PASSPHRASE || !RESEND_API_KEY || !FROM_EMAIL) {
-    console.error("ADMIN_PASSPHRASE, RESEND_API_KEY and FROM_EMAIL env vars are all required.");
+  if (!ADMIN_PASSPHRASE || !BREVO_API_KEY || !FROM_EMAIL) {
+    console.error("ADMIN_PASSPHRASE, BREVO_API_KEY and FROM_EMAIL env vars are all required.");
     process.exit(1);
   }
 
@@ -99,7 +99,7 @@ async function main() {
       <p>&mdash; NFL Loser Bowl</p>
     `;
     try {
-      await sendEmail(RESEND_API_KEY, {
+      await sendEmail(BREVO_API_KEY, {
         from: FROM_EMAIL,
         to: p.email,
         subject: `Reminder: Week ${week} pick due ${deadlineLabel}`,

@@ -162,7 +162,7 @@ async function sendResultsForWeek(week, { games, results, teamName, players, pic
       await sendEmail(BREVO_API_KEY, {
         from: FROM_EMAIL,
         to: p.email,
-        subject: `Week ${week} results: ${strikeRows.length} struck out`,
+        subject: `NFL Loser Bowl: Week ${week} results`,
         html,
       });
       console.log(`Sent Week ${week} results to ${p.name} <${p.email}>`);

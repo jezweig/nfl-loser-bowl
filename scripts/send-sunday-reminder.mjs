@@ -112,7 +112,7 @@ async function main() {
       await sendEmail(BREVO_API_KEY, {
         from: FROM_EMAIL,
         to: p.email,
-        subject: `Last call: Week ${week} pick due ${deadlineLabel}`,
+        subject: `NFL Loser Bowl: Last call for Week ${week}, due ${deadlineLabel}`,
         html,
       });
       console.log(`Sent non-picker reminder to ${p.name} <${p.email}>`);

@@ -124,7 +124,7 @@ async function main() {
       await sendEmail(BREVO_API_KEY, {
         from: FROM_EMAIL,
         to: p.email,
-        subject: `Week ${week} pick summary: who picked what`,
+        subject: `NFL Loser Bowl: Week ${week} pick summary`,
         html,
       });
       console.log(`Sent pick summary to ${p.name} <${p.email}>`);

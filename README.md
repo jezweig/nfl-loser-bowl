@@ -71,7 +71,46 @@ page uses, so it needs your commissioner passphrase, stored as a secret
 result the automation got wrong, enter one early, or handle buybacks/PIN
 resets (which the automation doesn't touch).
 
-### 5. Deploy
+### 5. Automatic emails (optional)
+
+Two more scheduled GitHub Actions use [Resend](https://resend.com) (a
+transactional email API — just an API key, no Gmail/OAuth account linking)
+to email players directly:
+
+- **`.github/workflows/send-reminders.yml`** — Sundays ~11:30am ET, emails
+  anyone with an address on file who hasn't picked yet and isn't already
+  eliminated, with the deadline and a link to `pick.html`.
+- **`.github/workflows/send-recap.yml`** — Sundays ~2-3pm ET (after the 1pm
+  deadline), emails everyone with an address on file who picked what that
+  week.
+
+Players opt in by entering an email on the `pick.html` login screen
+(optional, never shown to other players — it's excluded from the public
+`players` grant in the schema). Nothing is sent to anyone who leaves it
+blank.
+
+To turn this on:
+
+1. Sign up at [resend.com](https://resend.com) (free tier: 3,000
+   emails/month, plenty for a pool this size).
+2. Verify a sender — either a single email address, or a domain for a more
+   official-looking "from" address (Resend's dashboard walks you through
+   the DNS records; this is just proving you own the address/domain, not
+   connecting a personal inbox).
+3. Create an API key in the Resend dashboard.
+4. Add three more repo secrets (same place as `ADMIN_PASSPHRASE` above):
+   - `RESEND_API_KEY` — the key from step 3.
+   - `FROM_EMAIL` — e.g. `NFL Loser Bowl <picks@yourdomain.com>`, matching
+     the sender you verified in step 2.
+5. If you're starting mid-season, run `supabase/add_email_notifications.sql`
+   once in the Supabase SQL editor (schema.sql already includes this for
+   new setups).
+
+Both workflows are idempotent per week (guarded by an `email_log` table via
+`admin_claim_email_send`), so re-running one manually from the **Actions**
+tab is always safe — it just no-ops if that week's email already went out.
+
+### 6. Deploy
 
 Push this repo and enable GitHub Pages (repo **Settings -> Pages**, source
 = this branch/`main`, root folder). Any other static host works the same

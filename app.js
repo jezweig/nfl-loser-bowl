@@ -172,10 +172,11 @@ async function loadResults() {
 
 // ---- RPC calls -----------------------------------------------------------
 
-async function registerOrLogin(name, pin) {
+async function registerOrLogin(name, pin, email) {
   const { data, error } = await sb.rpc("register_or_login", {
     p_name: name,
     p_pin: pin,
+    p_email: email || null,
   });
   if (error) throw error;
   return data[0];

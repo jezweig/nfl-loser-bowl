@@ -1,0 +1,23 @@
+name: Send missed-pick reminders
+
+on:
+  schedule:
+    # Sundays 15:30 UTC (~11:30am ET) — comfortably before the 1pm ET
+    # deadline in both EDT and EST. The script itself is idempotent
+    # (admin_claim_email_send), so a manual re-run is always safe.
+    - cron: "30 15 * * 0"
+  workflow_dispatch: {}
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: node scripts/send-reminders.mjs
+        env:
+          ADMIN_PASSPHRASE: ${{ secrets.ADMIN_PASSPHRASE }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          FROM_EMAIL: ${{ secrets.FROM_EMAIL }}

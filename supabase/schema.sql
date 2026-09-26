@@ -356,10 +356,12 @@ create table if not exists players (
   rebought boolean not null default false,
   rebuy_week int,
   paid boolean not null default false,
+  email text,
   created_at timestamptz not null default now()
 );
 
 alter table players add column if not exists paid boolean not null default false;
+alter table players add column if not exists email text;
 
 create table if not exists picks (
   id bigserial primary key,
@@ -387,6 +389,16 @@ create table if not exists admin_config (
   check (id = 1)
 );
 
+-- Tracks which scheduled emails (missed-pick reminders, weekly recaps) have
+-- already gone out, so the GitHub Actions workflow can run hourly without
+-- risking a duplicate send for the same week.
+create table if not exists email_log (
+  kind text not null,
+  week int not null,
+  sent_at timestamptz not null default now(),
+  primary key (kind, week)
+);
+
 -- ── Row Level Security ──────────────────────────────────────────────
 
 alter table games enable row level security;
@@ -395,6 +407,7 @@ alter table players enable row level security;
 alter table picks enable row level security;
 alter table results enable row level security;
 alter table admin_config enable row level security;
+alter table email_log enable row level security;
 
 -- RLS policies control which ROWS are visible; PostgREST also requires
 -- the base table-level GRANT below regardless of policies (Supabase's
@@ -486,9 +499,40 @@ as $$
   );
 $$;
 
+-- The week that's still open for picking right now (earliest week whose
+-- Sunday deadline hasn't passed yet), or the final week once the whole
+-- season's deadlines are behind us. Used by the reminder email job to know
+-- which week to nudge players about.
+create or replace function current_week()
+returns int
+language sql
+stable
+as $$
+  select coalesce(
+    (select min(week) from games where week_deadline(week) > now()),
+    (select max(week) from games)
+  );
+$$;
+
+-- The most recently closed week (deadline already passed), or null before
+-- Week 1's deadline. Used by the weekly recap email job.
+create or replace function last_closed_week()
+returns int
+language sql
+stable
+as $$
+  select max(week) from games where week_deadline(week) <= now();
+$$;
+
 -- ── RPC: player registration / login ────────────────────────────────
 
-create or replace function register_or_login(p_name text, p_pin text)
+-- p_email is optional and never required: passing it (on registration or
+-- any later login) sets/updates that player's email address, used only for
+-- the missed-pick reminder and weekly recap emails — never shown publicly
+-- (see the players grant below, which excludes the email column).
+drop function if exists register_or_login(text, text);
+
+create or replace function register_or_login(p_name text, p_pin text, p_email text default null)
 returns table(player_id bigint, out_name text, is_new boolean)
 language plpgsql
 security definer
@@ -497,6 +541,7 @@ as $$
 declare
   v_slug text := lower(regexp_replace(trim(p_name), '\s+', ' ', 'g'));
   v_row players%rowtype;
+  v_email text := nullif(trim(p_email), '');
 begin
   if v_slug = '' then
     raise exception 'invalid_name';
@@ -511,10 +556,13 @@ begin
     if v_row.pin_hash <> extensions.crypt(p_pin, v_row.pin_hash) then
       raise exception 'wrong_pin';
     end if;
+    if v_email is not null then
+      update players set email = v_email where id = v_row.id;
+    end if;
     return query select v_row.id, v_row.name, false;
   else
-    insert into players (slug, name, pin_hash)
-    values (v_slug, trim(p_name), extensions.crypt(p_pin, extensions.gen_salt('bf')))
+    insert into players (slug, name, pin_hash, email)
+    values (v_slug, trim(p_name), extensions.crypt(p_pin, extensions.gen_salt('bf')), v_email)
     returning players.id, players.name, true into player_id, out_name, is_new;
     return next;
   end if;
@@ -659,6 +707,54 @@ begin
 end;
 $$;
 
+-- ── RPC: admin — list players including email (for the email jobs) ──
+
+create or replace function admin_list_players(p_passphrase text)
+returns table(id bigint, name text, email text, slug text, rebought boolean, rebuy_week int, paid boolean)
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_hash text;
+begin
+  select passphrase_hash into v_hash from admin_config where id = 1;
+  if v_hash is null or v_hash <> extensions.crypt(p_passphrase, v_hash) then
+    raise exception 'wrong_passphrase';
+  end if;
+
+  return query
+    select p.id, p.name, p.email, p.slug, p.rebought, p.rebuy_week, p.paid
+    from players p
+    order by p.name;
+end;
+$$;
+
+-- ── RPC: admin — claim a scheduled email send (idempotency guard) ───
+-- Returns true the first time a given (kind, week) is claimed, false on
+-- every later call for that same pair — lets an hourly cron job send each
+-- week's reminder/recap exactly once without a separate scheduler.
+
+create or replace function admin_claim_email_send(p_passphrase text, p_kind text, p_week int)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_hash text;
+begin
+  select passphrase_hash into v_hash from admin_config where id = 1;
+  if v_hash is null or v_hash <> extensions.crypt(p_passphrase, v_hash) then
+    raise exception 'wrong_passphrase';
+  end if;
+
+  insert into email_log (kind, week) values (p_kind, p_week)
+  on conflict (kind, week) do nothing;
+  return found;
+end;
+$$;
+
 -- ── RPC: admin — reset a forgotten PIN ────────────────────────────────
 
 create or replace function admin_reset_pin(p_passphrase text, p_player_id bigint, p_new_pin text)
@@ -695,10 +791,15 @@ on conflict (id) do nothing;
 -- To change the passphrase later, run:
 --   update admin_config set passphrase_hash = extensions.crypt('new passphrase', extensions.gen_salt('bf')) where id = 1;
 
-grant execute on function register_or_login(text, text) to anon, authenticated;
+grant execute on function register_or_login(text, text, text) to anon, authenticated;
 grant execute on function submit_pick(bigint, text, int, text) to anon, authenticated;
 grant execute on function get_my_picks(bigint, text) to anon, authenticated;
 grant execute on function admin_set_result(text, int, text, text, text) to anon, authenticated;
 grant execute on function admin_set_rebuy(text, bigint, boolean, int) to anon, authenticated;
 grant execute on function admin_set_paid(text, bigint, boolean) to anon, authenticated;
 grant execute on function admin_reset_pin(text, bigint, text) to anon, authenticated;
+grant execute on function admin_list_players(text) to anon, authenticated;
+grant execute on function admin_claim_email_send(text, text, int) to anon, authenticated;
+grant execute on function current_week() to anon, authenticated;
+grant execute on function last_closed_week() to anon, authenticated;
+grant execute on function week_deadline(int) to anon, authenticated;

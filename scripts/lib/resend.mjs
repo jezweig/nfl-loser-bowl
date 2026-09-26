@@ -1,0 +1,17 @@
+// Minimal Resend API client — no SDK dependency needed for this volume.
+
+export async function sendEmail(apiKey, { from, to, subject, html }) {
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ from, to, subject, html }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Resend send to ${to} -> ${res.status} ${text}`);
+  }
+  return res.json();
+}

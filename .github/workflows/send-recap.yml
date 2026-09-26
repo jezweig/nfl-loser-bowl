@@ -1,0 +1,23 @@
+name: Send weekly pick recap
+
+on:
+  schedule:
+    # Sundays 19:00 UTC (~2-3pm ET, after the 1pm ET deadline in both EDT
+    # and EST). The script itself is idempotent (admin_claim_email_send),
+    # so a manual re-run is always safe.
+    - cron: "0 19 * * 0"
+  workflow_dispatch: {}
+
+jobs:
+  recap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: node scripts/send-recap.mjs
+        env:
+          ADMIN_PASSPHRASE: ${{ secrets.ADMIN_PASSPHRASE }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          FROM_EMAIL: ${{ secrets.FROM_EMAIL }}

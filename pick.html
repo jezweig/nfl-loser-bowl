@@ -114,11 +114,23 @@
               you used before.
             </div>
           </div>
+          <div class="field">
+            <label for="email-input">Email (optional)</label>
+            <input id="email-input" type="email" autocomplete="email" placeholder="For weekly reminders &amp; recaps" />
+            <div class="field-hint">
+              Optional — leave blank to skip. If you enter one, we'll email a
+              nudge if you haven't picked by the deadline, plus a weekly
+              recap of what everyone picked. Never shown to other players.
+            </div>
+          </div>
           <button class="btn" id="login-btn" style="width:100%;">Continue →</button>
         </section>
       `;
       document.getElementById("login-btn").addEventListener("click", handleLogin);
       document.getElementById("pin-input").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") handleLogin();
+      });
+      document.getElementById("email-input").addEventListener("keydown", (e) => {
         if (e.key === "Enter") handleLogin();
       });
       const newPlayerLink = document.getElementById("new-player-link");
@@ -143,6 +155,7 @@
       const nameEl = document.getElementById("name-select") || document.getElementById("name-input");
       const name = (nameEl ? nameEl.value : "").trim();
       const pin = document.getElementById("pin-input").value.trim();
+      const email = document.getElementById("email-input").value.trim();
       const btn = document.getElementById("login-btn");
       if (!name) return renderLogin("Please enter your name.");
       if (!/^\d{4,8}$/.test(pin)) return renderLogin("PIN must be 4-8 digits.");
@@ -150,7 +163,7 @@
       btn.disabled = true;
       btn.textContent = "Checking…";
       try {
-        const result = await registerOrLogin(name, pin);
+        const result = await registerOrLogin(name, pin, email);
         saveSession(result.player_id, result.out_name, pin);
         state.session = { player_id: result.player_id, name: result.out_name, pin };
         await loadPickScreen();

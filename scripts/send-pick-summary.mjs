@@ -44,16 +44,6 @@ async function main() {
     return;
   }
 
-  const claimed = await rpc("admin_claim_email_send", {
-    p_passphrase: ADMIN_PASSPHRASE,
-    p_kind: "pick_summary",
-    p_week: week,
-  });
-  if (!claimed) {
-    console.log(`Week ${week} pick summary already sent — skipping.`);
-    return;
-  }
-
   const [players, picks, teams] = await Promise.all([
     rpc("admin_list_players", { p_passphrase: ADMIN_PASSPHRASE }),
     sbFetch(`/rest/v1/public_picks?select=player_id,team&week=eq.${week}`),
@@ -100,6 +90,20 @@ async function main() {
 
   const recipients = players.filter((p) => p.email);
   console.log(`Week ${week} pick summary: ${totalPicks} picks, emailing ${recipients.length} player(s).`);
+
+  // Claim only now, once every network call needed to build the send has
+  // already succeeded — claiming any earlier risks marking the week
+  // "sent" even though a transient failure (e.g. a dropped connection)
+  // meant nothing actually went out.
+  const claimed = await rpc("admin_claim_email_send", {
+    p_passphrase: ADMIN_PASSPHRASE,
+    p_kind: "pick_summary",
+    p_week: week,
+  });
+  if (!claimed) {
+    console.log(`Week ${week} pick summary already sent — skipping.`);
+    return;
+  }
   if (recipients.length === 0) return;
 
   for (const p of recipients) {

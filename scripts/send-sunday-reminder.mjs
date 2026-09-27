@@ -49,16 +49,6 @@ async function main() {
     return;
   }
 
-  const claimed = await rpc("admin_claim_email_send", {
-    p_passphrase: ADMIN_PASSPHRASE,
-    p_kind: "sunday_nonpickers",
-    p_week: week,
-  });
-  if (!claimed) {
-    console.log(`Week ${week} non-picker reminder already sent — skipping.`);
-    return;
-  }
-
   const [deadline, players, weekGames, teams, weekPicks, priorPicks, results] = await Promise.all([
     rpc("week_deadline", { p_week: week }),
     rpc("admin_list_players", { p_passphrase: ADMIN_PASSPHRASE }),
@@ -84,6 +74,20 @@ async function main() {
   });
 
   console.log(`Week ${week}: ${recipients.length} player(s) still need to pick.`);
+
+  // Claim only now, once every network call needed to build the send has
+  // already succeeded — claiming any earlier risks marking the week
+  // "sent" even though a transient failure (e.g. a dropped connection)
+  // meant nothing actually went out.
+  const claimed = await rpc("admin_claim_email_send", {
+    p_passphrase: ADMIN_PASSPHRASE,
+    p_kind: "sunday_nonpickers",
+    p_week: week,
+  });
+  if (!claimed) {
+    console.log(`Week ${week} non-picker reminder already sent — skipping.`);
+    return;
+  }
   if (recipients.length === 0) return;
 
   const deadlineLabel = formatDeadline(deadline);

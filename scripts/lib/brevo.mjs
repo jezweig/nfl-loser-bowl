@@ -13,8 +13,21 @@ function parseFrom(fromEnv) {
   return { email: fromEnv.trim() };
 }
 
+// Retries once on a transient network-level failure (fetch() itself
+// throwing — a dropped connection, DNS hiccup, etc.), not on an HTTP error
+// response (that's a real error, not worth retrying).
+async function fetchWithRetry(url, opts) {
+  try {
+    return await fetch(url, opts);
+  } catch (err) {
+    console.warn(`Transient fetch error calling Brevo, retrying once:`, err.message || err);
+    await new Promise((r) => setTimeout(r, 1000));
+    return fetch(url, opts);
+  }
+}
+
 export async function sendEmail(apiKey, { from, to, subject, html }) {
-  const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+  const res = await fetchWithRetry("https://api.brevo.com/v3/smtp/email", {
     method: "POST",
     headers: {
       accept: "application/json",

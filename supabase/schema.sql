@@ -609,8 +609,14 @@ as $$
     from per_week
     group by player_id
   )
-  select p.id, coalesce(sc.strikes, 0),
-    coalesce(sc.strikes, 0) >= (case when p.rebought then 1 else 2 end)
+  select p.id,
+    -- Cap the displayed count at the elimination threshold: once a player
+    -- is out and never buys back in, further missed weeks shouldn't keep
+    -- inflating their strike count (2, 3, 4...) — it just stays "2/2" (or
+    -- "1/1" post-rebuy). The eliminated flag below is unaffected either
+    -- way, since it's derived from the uncapped total.
+    least(coalesce(sc.strikes, 0), case when p.rebought then 1 else 2 end) as strikes,
+    coalesce(sc.strikes, 0) >= (case when p.rebought then 1 else 2 end) as eliminated
   from players p
   left join strike_counts sc on sc.player_id = p.id;
 $$;

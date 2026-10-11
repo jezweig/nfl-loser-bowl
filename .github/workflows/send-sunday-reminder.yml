@@ -2,10 +2,18 @@ name: Send Sunday non-picker reminder
 
 on:
   schedule:
-    # Hourly, every day. The script itself only sends once the DB-computed
-    # sunday_reminder_time() (Sunday 10am ET, DST-safe) has passed, and
-    # only once per week (admin_claim_email_send) — cron cadence here is
-    # just how promptly we notice, not the real gate.
+    # Two dedicated Sunday runs aimed at exactly 10:00am ET — 14:00 UTC
+    # during EDT (through early November), 15:00 UTC during EST (the rest
+    # of the season). Both fire every Sunday; the DB-computed gate plus
+    # admin_claim_email_send mean only the one matching the current DST
+    # offset actually sends, so no code change is needed at the Nov
+    # changeover. The hourly run below is purely a fallback in case
+    # GitHub Actions delays or drops one of these (scheduled workflows are
+    # best-effort and can lag under load) — without it, a dropped 10am run
+    # would otherwise wait up to the next hourly tick, or not go out at
+    # all if the hourly tick is itself delayed past the deadline.
+    - cron: "0 14 * * 0"
+    - cron: "0 15 * * 0"
     - cron: "30 * * * *"
   workflow_dispatch: {}
 

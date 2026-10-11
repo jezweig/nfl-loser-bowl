@@ -74,13 +74,14 @@
     async function render() {
       const container = document.getElementById("standings-table-container");
       try {
-        const [players, teams, picks, results, games, strikesMap] = await Promise.all([
+        const [players, teams, picks, results, games, strikesMap, weekStrikes] = await Promise.all([
           loadPlayers(),
           loadTeams(),
           loadVisiblePicks(),
           loadResults(),
           loadGames(),
           loadAllStrikes(),
+          loadWeekStrikes(),
         ]);
 
         if (players.length === 0) {
@@ -98,20 +99,6 @@
 
         const weekHeaders = Array.from({ length: maxWeek }, (_, i) => `<th>Wk ${i + 1}</th>`).join("");
 
-        const byWeek = groupByWeek(games);
-        // Whether a missed pick in week w counts toward strikes — mirrors
-        // all_player_strikes()'s rules (deadline passed, player already
-        // joined, not forgiven by a rebuy) so the grid matches the count.
-        function weekCounts(player, w) {
-          const weekGames = byWeek[w];
-          if (!weekGames) return false;
-          const deadline = weekSundayDeadline(weekGames);
-          if (deadline > now) return false;
-          if (player.rebought && player.rebuy_week && w < player.rebuy_week) return false;
-          if (new Date(player.created_at) > deadline) return false;
-          return true;
-        }
-
         const rows = players
           .map((player) => {
             const { strikes = 0, eliminated = false } = strikesMap[player.id] || {};
@@ -122,9 +109,16 @@
             for (let w = 1; w <= maxWeek; w++) {
               const pick = (picksByPlayer[player.id] || {})[w];
               if (!pick) {
-                cells += weekCounts(player, w)
+                // Only style a missed week as a strike while it still
+                // counts toward elimination (player_week_strikes()) — once
+                // someone's out and never buys back in, later missed weeks
+                // are just noise, not additional strikes.
+                const wk = weekStrikes[`${player.id}_${w}`];
+                cells += !wk
+                  ? `<td>&mdash;</td>`
+                  : wk.counted
                   ? `<td><span class="cell-pick"><span class="result strike">Missed (strike)</span></span></td>`
-                  : `<td>&mdash;</td>`;
+                  : `<td><span class="cell-pick" style="color:var(--text-dim);">No pick</span></td>`;
                 continue;
               }
               if (pick.team == null) {

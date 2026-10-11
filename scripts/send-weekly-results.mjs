@@ -12,7 +12,6 @@
 
 import { rpc, sbFetch } from "./lib/supabase.mjs";
 import { sendEmail } from "./lib/brevo.mjs";
-import { resultForPick } from "./lib/pool-logic.mjs";
 import { wrapEmail, dataTable, escapeHtml, COLORS } from "./lib/email-template.mjs";
 
 const ADMIN_PASSPHRASE = process.env.ADMIN_PASSPHRASE;
@@ -52,13 +51,14 @@ async function main() {
     return;
   }
 
-  const [games, results, teams, players, allPicks, strikeRows] = await Promise.all([
+  const [games, results, teams, players, allPicks, strikeRows, weekStrikeRows] = await Promise.all([
     sbFetch(`/rest/v1/games?select=week,home,away,kickoff`),
     sbFetch(`/rest/v1/results?select=week,home,away,winner`),
     sbFetch(`/rest/v1/teams?select=code,name`),
     rpc("admin_list_players", { p_passphrase: ADMIN_PASSPHRASE }),
     sbFetch(`/rest/v1/public_picks?select=player_id,week,team`),
     rpc("all_player_strikes", {}),
+    rpc("player_week_strikes", {}),
   ]);
 
   const teamName = {};
@@ -81,11 +81,13 @@ async function main() {
       console.log(`Week ${week} results already sent — skipping.`);
       continue;
     }
-    await sendResultsForWeek(week, { games, results, teams, teamName, players, picksByPlayer, strikesByPlayer });
+    const weekStrikesByPlayer = {};
+    weekStrikeRows.filter((r) => r.week === week).forEach((r) => (weekStrikesByPlayer[r.player_id] = r));
+    await sendResultsForWeek(week, { games, results, teams, teamName, players, picksByPlayer, strikesByPlayer, weekStrikesByPlayer });
   }
 }
 
-async function sendResultsForWeek(week, { games, results, teamName, players, picksByPlayer, strikesByPlayer }) {
+async function sendResultsForWeek(week, { games, results, teamName, players, picksByPlayer, strikesByPlayer, weekStrikesByPlayer }) {
   const weekGames = games.filter((g) => g.week === week);
   const weekResults = results.filter((r) => r.week === week);
 
@@ -101,27 +103,24 @@ async function sendResultsForWeek(week, { games, results, teamName, players, pic
     });
   const gamesResultTable = dataTable(["Matchup", "Winner"], gameRows);
 
-  // Everyone who took a strike this week — either their pick turned out to
-  // be the team that WON, or they missed the week entirely (a missed pick
-  // counts as a strike too — see all_player_strikes() in schema.sql).
-  // Status text spells out the elimination threshold explicitly (2 strikes
-  // normally, 1 after a buyback) rather than just showing a bare count,
-  // since that rule is easy to forget mid-season.
-  const weekDeadline = await rpc("week_deadline", { p_week: week });
+  // Everyone who took a strike this week that actually counted — either
+  // their pick turned out to be the team that WON, or they missed the
+  // week entirely (a missed pick counts as a strike too — see
+  // all_player_strikes() in schema.sql). Gated on player_week_strikes()'s
+  // `counted` flag so someone already eliminated (and never bought back
+  // in) doesn't keep showing up here every week going forward — that
+  // strike no longer counts, so it's not news. Status text spells out the
+  // elimination threshold explicitly (2 strikes normally, 1 after a
+  // buyback) rather than just showing a bare count, since that rule is
+  // easy to forget mid-season.
   const hitRows = [];
   for (const p of players) {
+    const wk = weekStrikesByPlayer[p.id];
+    if (!wk || !wk.counted) continue;
     const weekPick = (picksByPlayer[p.id] || []).find((pk) => pk.week === week);
-    let pickedLabel;
-    if (!weekPick) {
-      const forgiven = p.rebought && p.rebuy_week && week < p.rebuy_week;
-      const joinedInTime = new Date(p.created_at) <= new Date(weekDeadline);
-      if (forgiven || !joinedInTime) continue;
-      pickedLabel = `<span style="color:${COLORS.textDim};">No pick submitted</span>`;
-    } else if (weekPick.team == null || resultForPick(weekPick, results) !== "strike") {
-      continue;
-    } else {
-      pickedLabel = escapeHtml(teamName[weekPick.team] || weekPick.team);
-    }
+    const pickedLabel = !weekPick
+      ? `<span style="color:${COLORS.textDim};">No pick submitted</span>`
+      : escapeHtml(teamName[weekPick.team] || weekPick.team);
     const { strikes: strikesNow = 0, eliminated = false } = strikesByPlayer[p.id] || {};
     let statusHtml;
     if (eliminated && p.rebought) {

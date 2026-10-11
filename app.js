@@ -167,6 +167,22 @@ async function loadAllStrikes() {
   return map;
 }
 
+// Per-week detail behind loadAllStrikes() above (see player_week_strikes()
+// in schema.sql): whether a given week was a strike for a player, and
+// whether it actually counted toward elimination — lets the standings
+// grid and history page stop flagging weeks once someone's already out,
+// instead of a strike-shaped week forever after elimination. Returns a
+// map keyed by "<player_id>_<week>": { isStrike, counted }.
+async function loadWeekStrikes() {
+  const { data, error } = await sb.rpc("player_week_strikes");
+  if (error) throw error;
+  const map = {};
+  data.forEach((row) => {
+    map[`${row.player_id}_${row.week}`] = { isStrike: row.is_strike, counted: row.counted };
+  });
+  return map;
+}
+
 async function loadVisiblePicks() {
   // The public_picks view returns a row for every submitted pick (so the
   // UI can tell "submitted, still locked" apart from "no pick at all"),

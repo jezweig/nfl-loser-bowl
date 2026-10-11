@@ -12,7 +12,7 @@
 
 import { rpc, sbFetch } from "./lib/supabase.mjs";
 import { sendEmail } from "./lib/brevo.mjs";
-import { computeStrikes, isEliminated, resultForPick } from "./lib/pool-logic.mjs";
+import { resultForPick } from "./lib/pool-logic.mjs";
 import { wrapEmail, dataTable, escapeHtml, COLORS } from "./lib/email-template.mjs";
 
 const ADMIN_PASSPHRASE = process.env.ADMIN_PASSPHRASE;
@@ -52,18 +52,21 @@ async function main() {
     return;
   }
 
-  const [games, results, teams, players, allPicks] = await Promise.all([
+  const [games, results, teams, players, allPicks, strikeRows] = await Promise.all([
     sbFetch(`/rest/v1/games?select=week,home,away,kickoff`),
     sbFetch(`/rest/v1/results?select=week,home,away,winner`),
     sbFetch(`/rest/v1/teams?select=code,name`),
     rpc("admin_list_players", { p_passphrase: ADMIN_PASSPHRASE }),
     sbFetch(`/rest/v1/public_picks?select=player_id,week,team`),
+    rpc("all_player_strikes", {}),
   ]);
 
   const teamName = {};
   teams.forEach((t) => (teamName[t.code] = t.name));
   const picksByPlayer = {};
   for (const p of allPicks) (picksByPlayer[p.player_id] = picksByPlayer[p.player_id] || []).push(p);
+  const strikesByPlayer = {};
+  strikeRows.forEach((r) => (strikesByPlayer[r.player_id] = r));
 
   const readyWeeks = weeksReadyForResults(games, results, lastClosedWeek);
   console.log(`Weeks with every game decided: ${readyWeeks.join(", ") || "none"}.`);
@@ -78,11 +81,11 @@ async function main() {
       console.log(`Week ${week} results already sent — skipping.`);
       continue;
     }
-    await sendResultsForWeek(week, { games, results, teams, teamName, players, picksByPlayer, allPicks });
+    await sendResultsForWeek(week, { games, results, teams, teamName, players, picksByPlayer, strikesByPlayer });
   }
 }
 
-async function sendResultsForWeek(week, { games, results, teamName, players, picksByPlayer, allPicks }) {
+async function sendResultsForWeek(week, { games, results, teamName, players, picksByPlayer, strikesByPlayer }) {
   const weekGames = games.filter((g) => g.week === week);
   const weekResults = results.filter((r) => r.week === week);
 
@@ -98,18 +101,28 @@ async function sendResultsForWeek(week, { games, results, teamName, players, pic
     });
   const gamesResultTable = dataTable(["Matchup", "Winner"], gameRows);
 
-  // Everyone whose Week-`week` pick turned out to be a strike (their
-  // picked team WON), plus their status after this week's result. Status
-  // text spells out the elimination threshold explicitly (2 strikes normally,
-  // 1 after a buyback) rather than just showing a bare count, since that
-  // rule is easy to forget mid-season.
-  const strikeRows = [];
+  // Everyone who took a strike this week — either their pick turned out to
+  // be the team that WON, or they missed the week entirely (a missed pick
+  // counts as a strike too — see all_player_strikes() in schema.sql).
+  // Status text spells out the elimination threshold explicitly (2 strikes
+  // normally, 1 after a buyback) rather than just showing a bare count,
+  // since that rule is easy to forget mid-season.
+  const weekDeadline = await rpc("week_deadline", { p_week: week });
+  const hitRows = [];
   for (const p of players) {
     const weekPick = (picksByPlayer[p.id] || []).find((pk) => pk.week === week);
-    if (!weekPick || weekPick.team == null) continue;
-    if (resultForPick(weekPick, results) !== "strike") continue;
-    const strikesNow = computeStrikes(picksByPlayer[p.id] || [], results, p.rebought, p.rebuy_week);
-    const eliminated = isEliminated(strikesNow, p.rebought);
+    let pickedLabel;
+    if (!weekPick) {
+      const forgiven = p.rebought && p.rebuy_week && week < p.rebuy_week;
+      const joinedInTime = new Date(p.created_at) <= new Date(weekDeadline);
+      if (forgiven || !joinedInTime) continue;
+      pickedLabel = `<span style="color:${COLORS.textDim};">No pick submitted</span>`;
+    } else if (weekPick.team == null || resultForPick(weekPick, results) !== "strike") {
+      continue;
+    } else {
+      pickedLabel = escapeHtml(teamName[weekPick.team] || weekPick.team);
+    }
+    const { strikes: strikesNow = 0, eliminated = false } = strikesByPlayer[p.id] || {};
     let statusHtml;
     if (eliminated && p.rebought) {
       statusHtml = `<strong style="color:${COLORS.danger};">Eliminated</strong> <span style="color:${COLORS.textDim};">&mdash; no cushion left after your buyback</span>`;
@@ -118,22 +131,16 @@ async function sendResultsForWeek(week, { games, results, teamName, players, pic
     } else {
       statusHtml = `<span style="color:${COLORS.warn};">${strikesNow}/2 strikes</span> <span style="color:${COLORS.textDim};">&mdash; ${2 - strikesNow} more and you're out</span>`;
     }
-    strikeRows.push([
-      escapeHtml(p.name),
-      escapeHtml(teamName[weekPick.team] || weekPick.team),
-      statusHtml,
-    ]);
+    hitRows.push([escapeHtml(p.name), pickedLabel, statusHtml]);
   }
+
   const strikesTable =
-    strikeRows.length > 0
-      ? `<p style="margin:0 0 10px;font-size:13px;color:${COLORS.textDim};">Two strikes and you're out &mdash; just one after a buyback.</p>` +
-        dataTable(["Player", "Picked (lost the bet)", "Status"], strikeRows)
+    hitRows.length > 0
+      ? `<p style="margin:0 0 10px;font-size:13px;color:${COLORS.textDim};">Two strikes and you're out &mdash; just one after a buyback. A missed pick counts as a strike too.</p>` +
+        dataTable(["Player", "Picked (lost the bet)", "Status"], hitRows)
       : `<p style="margin:0 0 16px;font-size:14px;color:${COLORS.accent};">Nobody got hit this week &mdash; a clean week for the whole pool.</p>`;
 
-  const remaining = players.filter((p) => {
-    const strikesNow = computeStrikes(picksByPlayer[p.id] || [], results, p.rebought, p.rebuy_week);
-    return !isEliminated(strikesNow, p.rebought);
-  }).length;
+  const remaining = players.filter((p) => !(strikesByPlayer[p.id] || {}).eliminated).length;
 
   const bodyHtmlFor = (firstName) => `
     <p style="margin:0 0 14px;font-size:16px;">Hi ${escapeHtml(firstName)},</p>
@@ -150,7 +157,7 @@ async function sendResultsForWeek(week, { games, results, teamName, players, pic
   `;
 
   const recipients = players.filter((p) => p.email);
-  console.log(`Week ${week} results: ${recipients.length} recipient(s), ${strikeRows.length} strike(s), ${remaining} remaining.`);
+  console.log(`Week ${week} results: ${recipients.length} recipient(s), ${hitRows.length} strike(s), ${remaining} remaining.`);
 
   for (const p of recipients) {
     const html = wrapEmail({

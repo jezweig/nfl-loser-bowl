@@ -35,19 +35,22 @@
       <section class="card">
         <div class="legend">
           <span><span class="dot safe"></span>Survived (team lost)</span>
-          <span><span class="dot strike"></span>Strike (team won)</span>
+          <span><span class="dot strike"></span>Strike (team won, or no pick submitted)</span>
           <span><span class="dot locked"></span>🔒 Locked in, not revealed yet</span>
-          <span>&mdash; No pick submitted</span>
+          <span>&mdash; Week not yet closed / not applicable</span>
         </div>
         <p style="color: var(--text-dim); font-size: 0.88rem; margin: 4px 0 18px;">
-          2 strikes = eliminated. Eliminated players may buy back in once,
-          through Week 8, for $20 — after that, just <strong>1 strike</strong>
-          ends your run for good (no third life). A player's current-week
-          pick stays hidden from everyone else here until its deadline
-          passes (shown as "Locked in" once they've submitted) — check
-          <a href="history.html">My History</a> to confirm your own pick
-          went through. The <strong>Paid</strong>/<strong>Unpaid</strong>
-          tag next to each name tracks entry fees — Venmo
+          2 strikes = eliminated. <strong>A missed pick counts as a
+          strike</strong> once that week's deadline has passed — same as
+          picking the team that went on to win. Eliminated players may buy
+          back in once, through Week 8, for $20 — after that, just
+          <strong>1 strike</strong> ends your run for good (no third life).
+          A player's current-week pick stays hidden from everyone else here
+          until its deadline passes (shown as "Locked in" once they've
+          submitted) — check <a href="history.html">My History</a> to
+          confirm your own pick went through. The
+          <strong>Paid</strong>/<strong>Unpaid</strong> tag next to each
+          name tracks entry fees — Venmo
           <span class="venmo" style="font-size:0.85em;">@Josh-Zweig-2</span>
           if you're marked unpaid.
         </p>
@@ -71,12 +74,13 @@
     async function render() {
       const container = document.getElementById("standings-table-container");
       try {
-        const [players, teams, picks, results, games] = await Promise.all([
+        const [players, teams, picks, results, games, strikesMap] = await Promise.all([
           loadPlayers(),
           loadTeams(),
           loadVisiblePicks(),
           loadResults(),
           loadGames(),
+          loadAllStrikes(),
         ]);
 
         if (players.length === 0) {
@@ -94,11 +98,23 @@
 
         const weekHeaders = Array.from({ length: maxWeek }, (_, i) => `<th>Wk ${i + 1}</th>`).join("");
 
+        const byWeek = groupByWeek(games);
+        // Whether a missed pick in week w counts toward strikes — mirrors
+        // all_player_strikes()'s rules (deadline passed, player already
+        // joined, not forgiven by a rebuy) so the grid matches the count.
+        function weekCounts(player, w) {
+          const weekGames = byWeek[w];
+          if (!weekGames) return false;
+          const deadline = weekSundayDeadline(weekGames);
+          if (deadline > now) return false;
+          if (player.rebought && player.rebuy_week && w < player.rebuy_week) return false;
+          if (new Date(player.created_at) > deadline) return false;
+          return true;
+        }
+
         const rows = players
           .map((player) => {
-            const myPicks = Object.values(picksByPlayer[player.id] || {});
-            const strikes = computeStrikes(myPicks, results, player.rebought, player.rebuy_week);
-            const eliminated = isEliminated(strikes, player.rebought);
+            const { strikes = 0, eliminated = false } = strikesMap[player.id] || {};
             const status = eliminated ? "eliminated" : player.rebought ? "rebought" : "active";
             const statusLabel = eliminated ? "Eliminated" : player.rebought ? "Re-entered" : "Active";
 
@@ -106,7 +122,9 @@
             for (let w = 1; w <= maxWeek; w++) {
               const pick = (picksByPlayer[player.id] || {})[w];
               if (!pick) {
-                cells += `<td>&mdash;</td>`;
+                cells += weekCounts(player, w)
+                  ? `<td><span class="cell-pick"><span class="result strike">Missed (strike)</span></span></td>`
+                  : `<td>&mdash;</td>`;
                 continue;
               }
               if (pick.team == null) {

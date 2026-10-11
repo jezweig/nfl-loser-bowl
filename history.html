@@ -103,23 +103,24 @@
       historySection.innerHTML = `<div class="empty-state">Loading your history…</div>`;
 
       try {
-        const [games, teams, myPicks, results] = await Promise.all([
+        const [games, teams, myPicks, results, strikesMap] = await Promise.all([
           loadGames(),
           loadTeams(),
           getMyPicksRpc(session.player_id, session.pin),
           loadResults(),
+          loadAllStrikes(),
         ]);
 
         const players = await loadPlayers();
         const me = players.find((p) => p.id === session.player_id) || {};
 
-        const strikes = computeStrikes(myPicks, results, me.rebought, me.rebuy_week);
-        const eliminated = isEliminated(strikes, me.rebought);
+        const { strikes = 0, eliminated = false } = strikesMap[me.id] || {};
         const status = eliminated ? "Eliminated" : me.rebought ? "Re-entered" : "Active";
         const statusClass = eliminated ? "eliminated" : me.rebought ? "rebought" : "active";
 
         const now = new Date();
         const currentWeek = isSeasonComplete(now, games) ? null : computeCurrentWeek(now, games);
+        const byWeek = groupByWeek(games);
 
         const rowsByWeek = {};
         myPicks.forEach((p) => (rowsByWeek[p.week] = p));
@@ -129,7 +130,13 @@
         for (let w = 1; w <= maxWeek; w++) {
           const p = rowsByWeek[w];
           if (!p) {
-            rows += `<tr><td>Week ${w}</td><td colspan="2" style="color:var(--text-dim);">No pick</td></tr>`;
+            const weekGames = byWeek[w];
+            const deadline = weekGames ? weekSundayDeadline(weekGames) : null;
+            const closed = deadline && deadline <= now;
+            const forgiven = me.rebought && me.rebuy_week && w < me.rebuy_week;
+            const joinedInTime = !deadline || new Date(me.created_at) <= deadline;
+            const counted = closed && !forgiven && joinedInTime;
+            rows += `<tr><td>Week ${w}</td><td colspan="2" class="${counted ? "result strike" : ""}" style="${counted ? "" : "color:var(--text-dim);"}">${counted ? "Missed — counted as a strike" : "No pick"}</td></tr>`;
             continue;
           }
           const locked = new Date(p.locked_at) <= now;

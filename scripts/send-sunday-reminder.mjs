@@ -10,7 +10,6 @@
 
 import { rpc, sbFetch } from "./lib/supabase.mjs";
 import { sendEmail } from "./lib/brevo.mjs";
-import { computeStrikes, isEliminated } from "./lib/pool-logic.mjs";
 import { wrapEmail, button, COLORS } from "./lib/email-template.mjs";
 import { gamesTable } from "./lib/games-table.mjs";
 
@@ -49,28 +48,25 @@ async function main() {
     return;
   }
 
-  const [deadline, players, weekGames, teams, weekPicks, priorPicks, results] = await Promise.all([
+  const [deadline, players, weekGames, teams, weekPicks, strikeRows] = await Promise.all([
     rpc("week_deadline", { p_week: week }),
     rpc("admin_list_players", { p_passphrase: ADMIN_PASSPHRASE }),
     sbFetch(`/rest/v1/games?select=home,away,kickoff&week=eq.${week}`),
     sbFetch(`/rest/v1/teams?select=code,name`),
     sbFetch(`/rest/v1/public_picks?select=player_id&week=eq.${week}`),
-    sbFetch(`/rest/v1/public_picks?select=player_id,week,team&week=lt.${week}`),
-    sbFetch(`/rest/v1/results?select=week,home,away,winner`),
+    rpc("all_player_strikes", {}),
   ]);
 
   const teamName = {};
   teams.forEach((t) => (teamName[t.code] = t.name));
 
   const pickedThisWeek = new Set(weekPicks.map((p) => p.player_id));
-  const picksByPlayer = {};
-  for (const p of priorPicks) (picksByPlayer[p.player_id] = picksByPlayer[p.player_id] || []).push(p);
+  const eliminatedIds = new Set(strikeRows.filter((r) => r.eliminated).map((r) => r.player_id));
 
   const recipients = players.filter((p) => {
     if (!p.email) return false;
     if (pickedThisWeek.has(p.id)) return false;
-    const strikes = computeStrikes(picksByPlayer[p.id] || [], results, p.rebought, p.rebuy_week);
-    return !isEliminated(strikes, p.rebought);
+    return !eliminatedIds.has(p.id);
   });
 
   console.log(`Week ${week}: ${recipients.length} player(s) still need to pick.`);

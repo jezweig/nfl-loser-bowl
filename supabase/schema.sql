@@ -570,6 +570,51 @@ as $$
   select (week_sunday_date(p_week) + time '13:30') at time zone 'America/New_York';
 $$;
 
+-- ── Strikes / elimination (single source of truth) ───────────────────
+-- A missed pick counts as a strike, same as picking the team that went on
+-- to win — a week only counts once its deadline has passed (picking is
+-- still open), once a player has actually joined (never blames someone
+-- for a week before they registered), and, for a rebought player, only
+-- from their rebuy week onward (pre-rebuy weeks are wiped clean, missed
+-- picks included). Computed here once, server-side, rather than
+-- duplicated across the site's JS and the email scripts, so standings,
+-- history, and every email always agree.
+create or replace function all_player_strikes()
+returns table(player_id bigint, strikes int, eliminated boolean)
+language sql
+stable
+as $$
+  with closed_weeks as (
+    select distinct g.week from games g where week_deadline(g.week) <= now()
+  ),
+  applicable as (
+    select p.id as player_id, cw.week
+    from players p
+    cross join closed_weeks cw
+    where cw.week >= case when p.rebought then coalesce(p.rebuy_week, 1) else 1 end
+      and p.created_at <= week_deadline(cw.week)
+  ),
+  per_week as (
+    select a.player_id, a.week, pk.team, r.winner
+    from applicable a
+    left join picks pk on pk.player_id = a.player_id and pk.week = a.week
+    left join results r on r.week = a.week and (r.home = pk.team or r.away = pk.team)
+  ),
+  strike_counts as (
+    select player_id,
+      count(*) filter (
+        where team is null
+           or (winner is not null and winner <> 'TIE' and winner = team)
+      ) as strikes
+    from per_week
+    group by player_id
+  )
+  select p.id, coalesce(sc.strikes, 0),
+    coalesce(sc.strikes, 0) >= (case when p.rebought then 1 else 2 end)
+  from players p
+  left join strike_counts sc on sc.player_id = p.id;
+$$;
+
 -- ── RPC: player registration / login ────────────────────────────────
 
 -- p_email is optional and never required: passing it (on registration or
@@ -755,8 +800,13 @@ $$;
 
 -- ── RPC: admin — list players including email (for the email jobs) ──
 
+-- created_at is included so the email scripts can apply the same "did
+-- this player even exist yet" rule as all_player_strikes() when deciding
+-- whether a missing pick counts.
+drop function if exists admin_list_players(text);
+
 create or replace function admin_list_players(p_passphrase text)
-returns table(id bigint, name text, email text, slug text, rebought boolean, rebuy_week int, paid boolean)
+returns table(id bigint, name text, email text, slug text, rebought boolean, rebuy_week int, paid boolean, created_at timestamptz)
 language plpgsql
 security definer
 set search_path = public, extensions
@@ -773,7 +823,7 @@ begin
   end if;
 
   return query
-    select p.id, p.name, p.email, p.slug, p.rebought, p.rebuy_week, p.paid
+    select p.id, p.name, p.email, p.slug, p.rebought, p.rebuy_week, p.paid, p.created_at
     from players p
     order by p.name;
 end;
@@ -856,3 +906,4 @@ grant execute on function week_sunday_date(int) to anon, authenticated;
 grant execute on function friday_reminder_time(int) to anon, authenticated;
 grant execute on function sunday_reminder_time(int) to anon, authenticated;
 grant execute on function pick_summary_time(int) to anon, authenticated;
+grant execute on function all_player_strikes() to anon, authenticated;

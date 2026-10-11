@@ -1,26 +1,9 @@
-// Shared strike/elimination logic — mirrors computeStrikes/isEliminated in
-// app.js exactly (same win/lose semantics: a "strike" is when the picked
-// team WON, since the whole point is picking a team you expect to lose).
-
-export function isEliminated(strikes, rebought) {
-  return rebought ? strikes >= 1 : strikes >= 2;
-}
-
-// picks: [{week, team}] — only ever call with already-locked (fully
-// revealed) picks.
-export function computeStrikes(picks, results, rebought, rebuyWeek) {
-  let count = 0;
-  for (const pick of picks) {
-    if (pick.team == null) continue;
-    if (rebought && rebuyWeek && pick.week < rebuyWeek) continue;
-    const r = results.find(
-      (res) => res.week === pick.week && (res.home === pick.team || res.away === pick.team)
-    );
-    if (!r || !r.winner || r.winner === "TIE") continue;
-    if (r.winner === pick.team) count++;
-  }
-  return count;
-}
+// Whether a specific pick was a strike (picked team WON — the whole point
+// is picking a team you expect to lose). Cumulative strikes/elimination
+// across a whole player's history live server-side now (see
+// all_player_strikes() in schema.sql), since that also has to account for
+// missed picks, rebuys, and when a player joined — this just classifies
+// one pick's own outcome.
 
 export function resultForPick(pick, results) {
   const r = results.find(

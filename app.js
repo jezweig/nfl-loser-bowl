@@ -149,10 +149,22 @@ async function loadTeams() {
 async function loadPlayers() {
   const { data, error } = await sb
     .from("players")
-    .select("id,name,slug,rebought,rebuy_week,paid")
+    .select("id,name,slug,rebought,rebuy_week,paid,created_at")
     .order("name");
   if (error) throw error;
   return data;
+}
+
+// Strikes/elimination — including the missed-pick-counts-as-a-strike rule
+// — are computed once, server-side (see all_player_strikes() in
+// schema.sql), so the site and every email always agree. Returns a map
+// keyed by player id: { strikes, eliminated }.
+async function loadAllStrikes() {
+  const { data, error } = await sb.rpc("all_player_strikes");
+  if (error) throw error;
+  const map = {};
+  data.forEach((row) => (map[row.player_id] = { strikes: row.strikes, eliminated: row.eliminated }));
+  return map;
 }
 
 async function loadVisiblePicks() {
@@ -259,23 +271,6 @@ function friendlyError(err) {
   if (msg.includes("wrong_passphrase")) return "Incorrect commissioner passphrase.";
   if (msg.includes("invalid_winner")) return "Pick a valid winner for that game.";
   return msg || "Something went wrong.";
-}
-
-function computeStrikes(picks, results, rebought, rebuyWeek) {
-  let count = 0;
-  for (const pick of picks) {
-    if (rebought && rebuyWeek && pick.week < rebuyWeek) continue;
-    const result = resultForPick(pick, results);
-    if (result === "strike") count++;
-  }
-  return count;
-}
-
-// A rebuy is a second (and last) life: strikes before the rebuy week are
-// forgiven (see computeStrikes above), but only ONE strike after buying
-// back in is enough to be out for good, not two.
-function isEliminated(strikes, rebought) {
-  return rebought ? strikes >= 1 : strikes >= 2;
 }
 
 function resultForPick(pick, results) {

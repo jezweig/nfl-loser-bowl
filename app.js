@@ -1,6 +1,14 @@
 // Shared helpers used across pick.html, history.html, standings.html and
 // admin.html: date/time math (mirrors the logic in supabase/schema.sql),
 // data loading from Supabase, RPC calls, session storage, and formatting.
+//
+// GitHub Pages doesn't set cache-busting headers for static files, so a
+// browser can keep serving a stale cached copy of this file after it
+// changes (while the HTML that calls into it loads fresh — a prior change
+// here caused exactly that: a live "Can't find variable" error). Every
+// <script src="app.js?v=N"> tag across the HTML pages needs its version
+// bumped (and script.js/style.css likewise, where referenced) whenever
+// this file changes.
 
 const SESSION_KEY = "lb_session_v1";
 

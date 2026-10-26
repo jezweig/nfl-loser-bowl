@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Standings — NFL Loser Bowl 2026</title>
-  <link rel="stylesheet" href="style.css?v=2" />
+  <link rel="stylesheet" href="style.css?v=3" />
 </head>
 <body>
   <header class="site-header">
@@ -52,12 +52,12 @@
           <strong>Paid</strong>/<strong>Unpaid</strong> tag next to each
           name tracks entry fees — Venmo
           <span class="venmo" style="font-size:0.85em;">@Josh-Zweig-2</span>
-          if you're marked unpaid.
+          if you're marked unpaid. Players still in it are listed first;
+          eliminated players are tucked into the collapsed section below —
+          expand it to see their full pick history.
         </p>
-        <div class="table-scroll">
-          <div id="standings-table-container">
-            <div class="empty-state">Loading standings…</div>
-          </div>
+        <div id="standings-table-container">
+          <div class="empty-state">Loading standings…</div>
         </div>
       </section>
     </div>
@@ -99,60 +99,86 @@
 
         const weekHeaders = Array.from({ length: maxWeek }, (_, i) => `<th>Wk ${i + 1}</th>`).join("");
 
-        const rows = players
-          .map((player) => {
-            const { strikes = 0, eliminated = false } = strikesMap[player.id] || {};
-            const status = eliminated ? "eliminated" : player.rebought ? "rebought" : "active";
-            const statusLabel = eliminated ? "Eliminated" : player.rebought ? "Re-entered" : "Active";
+        function rowHtml(player) {
+          const { strikes = 0, eliminated = false } = strikesMap[player.id] || {};
+          const status = eliminated ? "eliminated" : player.rebought ? "rebought" : "active";
+          const statusLabel = eliminated ? "Eliminated" : player.rebought ? "Re-entered" : "Active";
 
-            let cells = "";
-            for (let w = 1; w <= maxWeek; w++) {
-              const pick = (picksByPlayer[player.id] || {})[w];
-              if (!pick) {
-                // Only style a missed week as a strike while it still
-                // counts toward elimination (player_week_strikes()) — once
-                // someone's out and never buys back in, later missed weeks
-                // are just noise, not additional strikes.
-                const wk = weekStrikes[`${player.id}_${w}`];
-                cells += !wk
-                  ? `<td>&mdash;</td>`
-                  : wk.counted
-                  ? `<td><span class="cell-pick"><span class="result strike">Missed (strike)</span></span></td>`
-                  : `<td><span class="cell-pick" style="color:var(--text-dim);">No pick</span></td>`;
-                continue;
-              }
-              if (pick.team == null) {
-                cells += `<td><span class="cell-pick"><span class="result locked">🔒 Locked in</span></span></td>`;
-                continue;
-              }
-              const result = resultForPick(pick, results);
-              const resultLabel = result === "safe" ? "Survived" : result === "strike" ? "Strike" : "Pending";
-              cells += `<td><span class="cell-pick"><span class="team">${escapeHtml(teams[pick.team] || pick.team)}</span><span class="result ${result}">${resultLabel}</span></span></td>`;
+          let cells = "";
+          for (let w = 1; w <= maxWeek; w++) {
+            const pick = (picksByPlayer[player.id] || {})[w];
+            if (!pick) {
+              // Only style a missed week as a strike while it still
+              // counts toward elimination (player_week_strikes()) — once
+              // someone's out and never buys back in, later missed weeks
+              // are just noise, not additional strikes.
+              const wk = weekStrikes[`${player.id}_${w}`];
+              cells += !wk
+                ? `<td>&mdash;</td>`
+                : wk.counted
+                ? `<td><span class="cell-pick"><span class="result strike">Missed (strike)</span></span></td>`
+                : `<td><span class="cell-pick" style="color:var(--text-dim);">No pick</span></td>`;
+              continue;
             }
+            if (pick.team == null) {
+              cells += `<td><span class="cell-pick"><span class="result locked">🔒 Locked in</span></span></td>`;
+              continue;
+            }
+            const result = resultForPick(pick, results);
+            const resultLabel = result === "safe" ? "Survived" : result === "strike" ? "Strike" : "Pending";
+            cells += `<td><span class="cell-pick"><span class="team">${escapeHtml(teams[pick.team] || pick.team)}</span><span class="result ${result}">${resultLabel}</span></span></td>`;
+          }
 
-            const strikeIcon = strikes > 0 ? `<span class="strike-icon">${"✗".repeat(strikes)}</span>` : "&mdash;";
+          const strikeIcon = strikes > 0 ? `<span class="strike-icon">${"✗".repeat(strikes)}</span>` : "&mdash;";
 
-            return `<tr class="${eliminated ? "eliminated" : ""}">
-              <td class="name-cell">${escapeHtml(player.name)}<span class="paid-tag ${player.paid ? "paid" : "unpaid"}">${player.paid ? "Paid" : "Unpaid"}</span></td>
-              ${cells}
-              <td class="strikes-cell">${strikeIcon}</td>
-              <td><span class="status-badge ${status}">${statusLabel}</span></td>
-            </tr>`;
-          })
-          .join("");
+          return `<tr class="${eliminated ? "eliminated" : ""}">
+            <td class="name-cell">${escapeHtml(player.name)}<span class="paid-tag ${player.paid ? "paid" : "unpaid"}">${player.paid ? "Paid" : "Unpaid"}</span></td>
+            ${cells}
+            <td class="strikes-cell">${strikeIcon}</td>
+            <td><span class="status-badge ${status}">${statusLabel}</span></td>
+          </tr>`;
+        }
+
+        function tableHtml(list) {
+          return `
+            <div class="table-scroll">
+              <table class="standings">
+                <thead>
+                  <tr>
+                    <th style="text-align:left;">Player</th>
+                    ${weekHeaders}
+                    <th>Strikes</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>${list.map(rowHtml).join("")}</tbody>
+              </table>
+            </div>
+          `;
+        }
+
+        const stillIn = players.filter((p) => !(strikesMap[p.id] || {}).eliminated);
+        const eliminated = players.filter((p) => (strikesMap[p.id] || {}).eliminated);
 
         container.innerHTML = `
-          <table class="standings">
-            <thead>
-              <tr>
-                <th style="text-align:left;">Player</th>
-                ${weekHeaders}
-                <th>Strikes</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
+          <div class="standings-group">
+            <div class="standings-group-heading">
+              <h3>Still In <span class="group-count in">${stillIn.length}</span></h3>
+            </div>
+            ${
+              stillIn.length
+                ? tableHtml(stillIn)
+                : `<div class="empty-state">Everyone's been eliminated — check the list below.</div>`
+            }
+          </div>
+          ${
+            eliminated.length
+              ? `<details class="standings-group eliminated-group">
+                  <summary>Eliminated <span class="group-count out">${eliminated.length}</span></summary>
+                  ${tableHtml(eliminated)}
+                </details>`
+              : ""
+          }
         `;
       } catch (err) {
         container.innerHTML = `<div class="form-error">${escapeHtml(friendlyError(err))}</div>`;

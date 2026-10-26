@@ -52,9 +52,9 @@
           <strong>Paid</strong>/<strong>Unpaid</strong> tag next to each
           name tracks entry fees — Venmo
           <span class="venmo" style="font-size:0.85em;">@Josh-Zweig-2</span>
-          if you're marked unpaid. Players still in it are listed first;
-          eliminated players are tucked into the collapsed section below —
-          expand it to see their full pick history.
+          if you're marked unpaid. Players still in it are listed first,
+          with eliminated players (dimmed) in their own section below —
+          click its heading to collapse it.
         </p>
         <div id="standings-table-container">
           <div class="empty-state">Loading standings…</div>
@@ -173,7 +173,7 @@
           </div>
           ${
             eliminated.length
-              ? `<details class="standings-group eliminated-group">
+              ? `<details class="standings-group eliminated-group" open>
                   <summary>Eliminated <span class="group-count out">${eliminated.length}</span></summary>
                   ${tableHtml(eliminated)}
                 </details>`
